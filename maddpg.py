@@ -199,7 +199,6 @@ class MADDPG(object):
             while True:
                 if dir is not None:
                     self.env.render()
-                a = self.choose_action(o)
 
                 a = np.zeros(self.N_A)
                 for i in xrange(self.N):

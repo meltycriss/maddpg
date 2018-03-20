@@ -1,16 +1,21 @@
 import argparse
 
-control_args = ['gpu', 'path', 'repeat', 'n_test']
+control_args = ['gpu', 'path', 'env', 'repeat', 'n_test']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
         'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step']
 
 def get_args():
     parser = argparse.ArgumentParser(description='rl')
     # control args
-    parser.add_argument('--gpu', type=str, choices=['0', '1', '2', '3'], default='2')
-    parser.add_argument('--path', type=str)
+    parser.add_argument('--gpu', type=str, choices=['0', '1', '2', '3'], required=True)
+    parser.add_argument('--path', type=str, required=True)
+    parser.add_argument('--env', type=str, required=True)
     parser.add_argument('--repeat', type=int, default=3)
     parser.add_argument('--n_test', type=int, default=100)
+    
+    ##############################################
+    # remember to change global control_args
+    ##############################################
 
     # model args
     parser.add_argument('--mem_size', type=int)
@@ -24,6 +29,11 @@ def get_args():
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--random_process', type=bool)
     parser.add_argument('--max_step', type=int)
+
+    ##############################################
+    # remember to change global model_args
+    ##############################################
+
     args = parser.parse_args()
     return args
 
