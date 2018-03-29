@@ -7,10 +7,10 @@ class Experience(object):
         self.mem = []
         self.pos = 0
     
-    def push(self, o, a, r, o_next):
+    def push(self, o, a, r, o_next, done):
         if len(self.mem) < self.capacity:
             self.mem.append(None)
-        self.mem[self.pos] = Transition(o, a, r, o_next)
+        self.mem[self.pos] = Transition(o, a, r, o_next, done)
         self.pos = (self.pos + 1) % self.capacity
     
     def sample(self, size):

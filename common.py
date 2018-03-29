@@ -1,6 +1,6 @@
 from collections import namedtuple
 
-Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'))
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
 
 S_EPI = 'epi'
 S_TOTAL_R = 'total_r'

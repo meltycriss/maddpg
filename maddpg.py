@@ -12,6 +12,7 @@ import torch.nn as nn
 from tqdm import trange
 import pandas as pd
 from gym import wrappers
+import os
 
 
 class MADDPG(object):
@@ -77,9 +78,10 @@ class MADDPG(object):
         self.data = pd.DataFrame(title)
         self.RAND_PROC = random_process
         
-    def train(self, dir=None):
+    def train(self, dir=None, interval=1000):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/train_record'.format(dir), force=True)
+            os.mkdir(os.path.join(dir, 'models'))
         update_counter = 0
         epsilon = self.EPSILON
         for epi in trange(self.MAX_EPI, desc='train epi', leave=True):
@@ -106,9 +108,10 @@ class MADDPG(object):
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
                     
                 o_, r, done, info = self.env.step(self.map_to_action(a))
-                self.exp.push(o, a, r, o_)
+                self.exp.push(o, a, r, o_, done)
                 
-                if epi>0: 
+                #if epi>0: 
+                if len(self.exp.mem)>self.BATCH_SIZE*25: 
                     self.update_actor_critic()
                     update_counter += 1
                     if update_counter % self.TARGET_UPDATE_FREQUENCY == 0:
@@ -118,6 +121,9 @@ class MADDPG(object):
                 o = o_
                 if done:
                     break
+            if dir is not None:
+                if (epi+1) % interval == 0:
+                    self.save(os.path.join(dir, 'models'), str(epi+1), save_data=False)
             s = pd.Series([epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
             self.data = self.data.append(s, ignore_index=True)
     
@@ -145,11 +151,14 @@ class MADDPG(object):
         bat_a = Variable(torch.Tensor(minibatch.action))
         bat_r = Variable(torch.Tensor(minibatch.reward)).unsqueeze(1)
         bat_o_ = Variable(torch.Tensor(minibatch.next_state))
+        bat_not_done_mask = list(map(lambda done: 0 if done else 1, minibatch.done))
+        bat_not_done_mask = Variable(torch.ByteTensor(bat_not_done_mask)).unsqueeze(1)
         if self.CUDA:
             bat_o = bat_o.cuda()
             bat_a = bat_a.cuda()
             bat_r = bat_r.cuda()
             bat_o_ = bat_o_.cuda()
+            bat_not_done_mask = bat_not_done_mask.cuda()
         
         # update critic
         bat_a_o_ = Variable(bat_a.data.clone())
@@ -159,7 +168,8 @@ class MADDPG(object):
             bat_a_o_[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o_
         #bat_a_o_ = self.target_actor(bat_o_)
 
-        Gt = bat_r + self.GAMMA * self.target_critic(bat_o_, bat_a_o_)
+        Gt = bat_r
+        Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
         Gt.detach_()
         eval_o = self.critic(bat_o, bat_a)
         criterion = nn.MSELoss()
@@ -184,6 +194,7 @@ class MADDPG(object):
         self.optim_actor.zero_grad()
         obj.backward()
         self.optim_actor.step()    
+
         self.critic.train()
 
     def test(self, dir=None, n=1):
@@ -218,10 +229,12 @@ class MADDPG(object):
         else:
             print df
 
-    def save(self, dir):
-        torch.save(self.actor.state_dict(), '{}/actor.pt'.format(dir))
-        torch.save(self.critic.state_dict(), '{}/critic.pt'.format(dir))
-        self.data.to_csv('{}/train_data.csv'.format(dir))
+    def save(self, dir, suffix='', save_data=True):
+        torch.save(self.actor.state_dict(), '{}/actor{}.pt'.format(dir, suffix))
+        torch.save(self.critic.state_dict(), '{}/critic{}.pt'.format(dir, suffix))
+        if save_data:
+            self.data.to_csv('{}/train_data{}.csv'.format(dir, suffix))
+
 
     def load_actor(self, dir):
         self.actor.load_state_dict(torch.load(dir))
