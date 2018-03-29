@@ -1,6 +1,6 @@
 import argparse
 
-control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval']
+control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
         'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step']
 
@@ -14,6 +14,7 @@ def get_args():
     parser.add_argument('--n_test', type=int, default=100)
     parser.add_argument('--manual', type=bool, default=False)
     parser.add_argument('--save_interval', type=int, default=1000)
+    parser.add_argument('--load', type=str)
     
     ##############################################
     # remember to change global control_args

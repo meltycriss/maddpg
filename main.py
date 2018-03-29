@@ -56,6 +56,10 @@ for i in trange(len(args), desc='model', leave=True):
     for n in trange(control_args['repeat'], desc='repeat', leave=True):
         dir = '{}/{}'.format(model_dir, n)
         maddpg=MADDPG(env, **arg)
+        if control_args['load'] is not None:
+            model_path = control_args['load']
+            maddpg.load_actor(os.path.join(model_path, 'actor.pt'))
+            maddpg.load_critic(os.path.join(model_path, 'critic.pt'))
         maddpg.train(dir, control_args['save_interval'])
         maddpg.save(dir)
         maddpg.test(dir, n=control_args['n_test'])
