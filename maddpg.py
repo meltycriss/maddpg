@@ -94,8 +94,8 @@ class MADDPG(object):
             while True:
                 counter += 1
                 
-                if dir is not None:
-                    self.env.render()
+                #if dir is not None:
+                #    self.env.render()
                 
                 a = np.zeros(self.N_A)
                 for i in xrange(self.N):
@@ -208,8 +208,8 @@ class MADDPG(object):
             o = self.env.reset()
             acc_r = 0
             while True:
-                if dir is not None:
-                    self.env.render()
+                #if dir is not None:
+                #    self.env.render()
 
                 a = np.zeros(self.N_A)
                 for i in xrange(self.N):
