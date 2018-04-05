@@ -1,7 +1,8 @@
 import common
 from model import Actor
 from model import Critic
-from memory import Experience
+#from memory import Experience
+from per import Experience #prioritized experience replay
 import torch.optim as optim
 from random_process import OrnsteinUhlenbeckProcess
 from torch.autograd import Variable
@@ -60,7 +61,21 @@ class MADDPG(object):
             self.target_actor.cuda()
             self.target_critic.cuda()
 
-        self.exp = Experience(mem_size)
+        # per
+        self.total_step = 0
+        self.PARTITION_NUM = 100
+        self.LEARN_START = mem_size/self.PARTITION_NUM+1
+        exp_conf = {
+                'size': mem_size,
+                'learn_start': self.LEARN_START,
+                'partition_num': self.PARTITION_NUM,
+                'total_step': self.MAX_EPI * 50,
+                'batch_size': batch_size,
+                }
+        self.exp = Experience(exp_conf)
+
+        # uniform er
+        #self.exp = Experience(mem_size)
         self.optim_critic = optim.Adam(self.critic.parameters(), lr=lr_critic)
         self.optim_actor = optim.Adam(self.actor.parameters(), lr=-lr_actor)
         self.random_processes = []
@@ -83,6 +98,7 @@ class MADDPG(object):
             self.env = wrappers.Monitor(self.orig_env, '{}/train_record'.format(dir), force=True)
             os.mkdir(os.path.join(dir, 'models'))
         update_counter = 0
+        self.total_step = 0
         epsilon = self.EPSILON
         for epi in trange(self.MAX_EPI, desc='train epi', leave=True):
             for i in xrange(self.N):
@@ -93,6 +109,7 @@ class MADDPG(object):
             acc_r = 0
             while True:
                 counter += 1
+                self.total_step += 1
                 
                 #if dir is not None:
                 #    self.env.render()
@@ -108,10 +125,16 @@ class MADDPG(object):
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
                     
                 o_, r, done, info = self.env.step(self.map_to_action(a))
-                self.exp.push(o, a, r, o_, done)
+
+                # per
+                self.exp.store(common.Transition(o, a, r, o_, done))
+
+                # uer
+                #self.exp.push(o, a, r, o_, done)
                 
                 #if epi>0: 
-                if len(self.exp.mem)>self.BATCH_SIZE*25: 
+                #if len(self.exp.mem)>self.BATCH_SIZE*25: 
+                if self.total_step > self.LEARN_START:
                     self.update_actor_critic()
                     update_counter += 1
                     if update_counter % self.TARGET_UPDATE_FREQUENCY == 0:
@@ -146,7 +169,12 @@ class MADDPG(object):
 
     def update_actor_critic(self):
         # sample minibatch
-        minibatch = common.Transition(*zip(*self.exp.sample(self.BATCH_SIZE)))
+
+        # per
+        minibatch, w, e_id = self.exp.sample(self.total_step)
+        minibatch = common.Transition(*zip(*minibatch))
+
+        #minibatch = common.Transition(*zip(*self.exp.sample(self.BATCH_SIZE)))
         bat_o = Variable(torch.Tensor(minibatch.state))
         bat_a = Variable(torch.Tensor(minibatch.action))
         bat_r = Variable(torch.Tensor(minibatch.reward)).unsqueeze(1)
@@ -172,10 +200,23 @@ class MADDPG(object):
         Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
         Gt.detach_()
         eval_o = self.critic(bat_o, bat_a)
-        criterion = nn.MSELoss()
+
+        # per
+        w = Variable(torch.Tensor(w)).unsqueeze(1)
         if self.CUDA:
-            criterion.cuda()
-        loss = criterion(eval_o, Gt)
+            w = w.cuda()
+        loss = (eval_o - Gt)**2
+        delta = loss.data.cpu().numpy().copy() if self.CUDA else loss.data.numpy().copy() 
+        self.exp.update_priority(e_id, delta)
+        loss = w*loss
+        loss = torch.mean(loss)
+
+        # uer
+        #criterion = nn.MSELoss()
+        #if self.CUDA:
+        #    criterion.cuda()
+        #loss = criterion(eval_o, Gt)
+
         self.optim_critic.zero_grad()
         loss.backward()
         self.optim_critic.step()

@@ -28,7 +28,9 @@ if not os.path.exists(root):
 args = None
 if control_args['manual']:
     args = [
-            {}
+            {'max_epi':20000, 'mem_size':10000},
+            {'max_epi':20000, 'mem_size':100000},
+            {'max_epi':20000, 'mem_size':1000000},
             ]
 else:
     model_args = arguments.get_model_args()
@@ -56,7 +58,7 @@ for i in trange(len(args), desc='model', leave=True):
     for n in trange(control_args['repeat'], desc='repeat', leave=True):
         dir = '{}/{}'.format(model_dir, n)
         maddpg=MADDPG(env, **arg)
-        if control_args['load'] is not None:
+        if control_args.has_key('load'):
             model_path = control_args['load']
             maddpg.load_actor(os.path.join(model_path, 'actor.pt'))
             maddpg.load_critic(os.path.join(model_path, 'critic.pt'))
