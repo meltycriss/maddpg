@@ -14,15 +14,16 @@ from tqdm import trange
 import pandas as pd
 from gym import wrappers
 import os
+from normalized_env import NormalizedEnv
 
 
 class MADDPG(object):
     def __init__(self, env, 
-            mem_size=7*int(1e3), 
+            mem_size=int(1e6), 
             lr_critic=1e-3, 
             lr_actor=1e-4, 
             epsilon=1., 
-            max_epi=1500, 
+            max_epi=int(1e4), 
             epsilon_decay=1./(1e5), 
             gamma=.99, 
             target_update_frequency=200, 
@@ -32,9 +33,13 @@ class MADDPG(object):
             ):
         self.CUDA = torch.cuda.is_available()
 
-        self.orig_env = env #for recording
+        self.orig_env = NormalizedEnv(env) #for recording
         if max_step is not None:
-            self.orig_env._max_episode_steps = max_step
+            tmp_env = env
+            if isinstance(tmp_env, gym.Wrapper):
+                while(tmp_env.class_name() != 'TimeLimit'):
+                    tmp_env = tmp_env.env
+                tmp_env._max_episode_steps = max_step
         self.env = self.orig_env
         self.N = 1
         if hasattr(self.env.unwrapped, 'N'):
@@ -124,7 +129,8 @@ class MADDPG(object):
                         epsilon -= self.EPSILON_DECAY
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
                     
-                o_, r, done, info = self.env.step(self.map_to_action(a))
+                #o_, r, done, info = self.env.step(self.map_to_action(a))
+                o_, r, done, info = self.env.step(a)
 
                 # per
                 self.exp.store(common.Transition(o, a, r, o_, done))
@@ -258,7 +264,8 @@ class MADDPG(object):
                     tmp_a = self.choose_action(tmp_o)
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
 
-                o_, r, done, info = self.env.step(self.map_to_action(a))
+                #o_, r, done, info = self.env.step(self.map_to_action(a))
+                o_, r, done, info = self.env.step(a)
                 acc_r += r
                 o = o_
                 if done:

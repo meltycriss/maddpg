@@ -83,3 +83,45 @@ class Actor(nn.Module):
         x = (self.fc3(x))
         x = F.tanh(x)
         return x
+
+#class Critic(nn.Module):
+#    def __init__(self, n_s, n_a):
+#        super(Critic, self).__init__()
+#        self.fcS = nn.Linear(n_s, 400)
+#        self.fcS.weight.data = fanin_init(self.fcS.weight.data.size())
+#        self.bnS = nn.BatchNorm1d(400)
+#        
+#        self.fc1 = nn.Linear(400+n_a, 300)
+#        self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
+#        self.bn1 = nn.BatchNorm1d(300)
+#        
+#        self.fc2 = nn.Linear(300, 1)
+#        nn.init.uniform(self.fc2.weight, uf_lb, uf_ub)
+#    
+#    def forward(self, s, a):
+#        o = F.relu(self.bnS(self.fcS(s)))
+#        o = torch.cat([o, a], 1)
+#        o = F.relu(self.bn1(self.fc1(o)))
+#        o = self.fc2(o)
+#        return o
+#
+#class Actor(nn.Module):
+#    def __init__(self, n_s, n_a):
+#        super(Actor, self).__init__()
+#        self.fc1 = nn.Linear(n_s, 400)
+#        self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
+#        self.bn1 = nn.BatchNorm1d(400)
+#        
+#        self.fc2 = nn.Linear(400, 300)
+#        self.fc2.weight.data = fanin_init(self.fc2.weight.data.size())
+#        self.bn2 = nn.BatchNorm1d(300)
+#        
+#        self.fc3 = nn.Linear(300, n_a)
+#        nn.init.uniform(self.fc3.weight, uf_lb, uf_ub)
+#        
+#    def forward(self, x):
+#        x = F.relu(self.bn1(self.fc1(x)))
+#        x = F.relu(self.bn2(self.fc2(x)))
+#        x = (self.fc3(x))
+#        x = F.tanh(x)
+#        return x
