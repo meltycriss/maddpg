@@ -7,6 +7,7 @@ import util
 import common
 import logging
 import arguments
+from normalized_env import NormalizedEnv
 
 # suppress INFO level logging 'Starting new video recorder writing to ...'
 logging.getLogger('gym.monitoring.video_recorder').setLevel(logging.WARNING)
@@ -18,6 +19,7 @@ control_args = arguments.get_control_args()
 
 ENV_NAME = control_args['env']
 env = gym.make(ENV_NAME)
+env = NormalizedEnv(env)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = control_args['gpu']
 
@@ -57,6 +59,7 @@ for i in trange(len(args), desc='model', leave=True):
     # repeat loop
     for n in trange(control_args['repeat'], desc='repeat', leave=True):
         dir = '{}/{}'.format(model_dir, n)
+        os.mkdir(dir)
         maddpg=MADDPG(env, **arg)
         if control_args.has_key('load'):
             model_path = control_args['load']

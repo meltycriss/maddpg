@@ -33,7 +33,7 @@ class MADDPG(object):
             ):
         self.CUDA = torch.cuda.is_available()
 
-        self.orig_env = NormalizedEnv(env) #for recording
+        self.orig_env = (env) #for recording
         if max_step is not None:
             tmp_env = env
             if isinstance(tmp_env, gym.Wrapper):
