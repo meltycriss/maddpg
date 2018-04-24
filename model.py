@@ -33,22 +33,22 @@ class Critic(nn.Module):
         self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
         self.bn1 = nn.BatchNorm1d(300)
         
-        self.fc2 = nn.Linear(300, 1)
-        #nn.init.kaiming_normal(self.fc2.weight)
-        nn.init.uniform(self.fc2.weight, uf_lb, uf_ub)
+        self.fc_final = nn.Linear(300, 1)
+        #nn.init.kaiming_normal(self.fc_final.weight)
+        nn.init.uniform(self.fc_final.weight, uf_lb, uf_ub)
     
     def forward(self, x, y):
 #         s = F.relu(self.bnS(self.fcS(x)))
 #         a = F.relu(self.bnA(self.fcA(y)))
 #         o = F.relu(self.bn1(self.fc1(s+a)))
-#         o = self.fc2(o)
+#         o = self.fc_final(o)
                
         s = self.bnS(self.fcS(x))
         a = self.bnA(self.fcA(y))
         o = F.relu(s+a)
         o = self.bn1(self.fc1(o))
         o = F.relu(o)
-        o = (self.fc2(o))
+        o = (self.fc_final(o))
         
         return o
 

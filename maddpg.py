@@ -15,6 +15,7 @@ import pandas as pd
 from gym import wrappers
 import os
 from normalized_env import NormalizedEnv
+import math
 
 
 class MADDPG(object):
@@ -66,6 +67,12 @@ class MADDPG(object):
             self.target_actor.cuda()
             self.target_critic.cuda()
 
+        # pop-art
+        self.update_counter = 0
+        self.beta = .1
+        self.y_mean = 0.
+        self.y_square_mean = 0.
+
         # per
         self.total_step = 0
         self.PARTITION_NUM = 100
@@ -102,7 +109,7 @@ class MADDPG(object):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/train_record'.format(dir), force=True)
             os.mkdir(os.path.join(dir, 'models'))
-        update_counter = 0
+        self.update_counter = 0
         self.total_step = 0
         epsilon = self.EPSILON
         for epi in trange(self.MAX_EPI, desc='train epi', leave=True):
@@ -141,9 +148,9 @@ class MADDPG(object):
                 #if epi>0: 
                 #if len(self.exp.mem)>self.BATCH_SIZE*25: 
                 if self.total_step > self.LEARN_START:
+                    self.update_counter += 1
                     self.update_actor_critic()
-                    update_counter += 1
-                    if update_counter % self.TARGET_UPDATE_FREQUENCY == 0:
+                    if self.update_counter % self.TARGET_UPDATE_FREQUENCY == 0:
                         self.update_target()
 
                 acc_r += r
@@ -204,6 +211,28 @@ class MADDPG(object):
 
         Gt = bat_r
         Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
+
+        # pop-art
+        beta_t = self.beta * 1. / (1 - math.pow(1-self.beta, self.update_counter))
+        y_t = torch.mean(Gt).data.cpu().numpy()[0]
+        y_square_t = torch.mean(Gt**2).data.cpu().numpy()[0]
+        y_mean_new = (1.-beta_t) * self.y_mean + beta_t * y_t
+        y_square_mean_new = (1.-beta_t) * self.y_square_mean + beta_t * y_square_t
+        y_delta = math.sqrt(self.y_square_mean - self.y_mean**2)
+        y_delta_new = math.sqrt(y_square_mean_new - y_mean_new**2)
+
+        self.critic.fc_final.weight.data *= y_delta / y_delta_new
+        self.critic.fc_final.bias.data *= y_delta
+        self.critic.fc_final.bias.data += (self.y_mean - y_mean_new)
+        self.critic.fc_final.bias.data /= y_delta_new
+
+        self.y_mean = y_mean_new
+        self.y_square_mean = y_square_mean_new
+        y_delta = y_delta_new
+
+        Gt -= self.y_mean
+        Gt /= y_delta
+
         Gt.detach_()
         eval_o = self.critic(bat_o, bat_a)
 
@@ -282,6 +311,7 @@ class MADDPG(object):
         torch.save(self.critic.state_dict(), '{}/critic{}.pt'.format(dir, suffix))
         if save_data:
             self.data.to_csv('{}/train_data{}.csv'.format(dir, suffix))
+        # MAYBE have to save and load y_mean and y_square_mean if using pop-art
 
 
     def load_actor(self, dir):
