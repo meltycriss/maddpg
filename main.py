@@ -19,7 +19,7 @@ control_args = arguments.get_control_args()
 
 ENV_NAME = control_args['env']
 env = gym.make(ENV_NAME)
-env = NormalizedEnv(env)
+#env = NormalizedEnv(env)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = control_args['gpu']
 
@@ -30,9 +30,9 @@ if not os.path.exists(root):
 args = None
 if control_args['manual']:
     args = [
-            {'max_epi':20000, 'mem_size':10000},
-            {'max_epi':20000, 'mem_size':100000},
-            {'max_epi':20000, 'mem_size':1000000},
+            {'lr_critic':1e-3, 'lr_actor':1e-4},
+            {'lr_critic':1e-2, 'lr_actor':1e-3},
+            {'lr_critic':1e-1, 'lr_actor':1e-2},
             ]
 else:
     model_args = arguments.get_model_args()

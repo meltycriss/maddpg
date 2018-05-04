@@ -72,6 +72,8 @@ class MADDPG(object):
         self.beta = .1
         self.y_mean = 0.
         self.y_square_mean = 0.
+        self.target_y_mean = self.y_mean
+        self.target_y_square_mean = self.y_square_mean
 
         # per
         self.total_step = 0
@@ -136,8 +138,8 @@ class MADDPG(object):
                         epsilon -= self.EPSILON_DECAY
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
                     
-                #o_, r, done, info = self.env.step(self.map_to_action(a))
-                o_, r, done, info = self.env.step(a)
+                o_, r, done, info = self.env.step(self.map_to_action(a))
+                #o_, r, done, info = self.env.step(a)
 
                 # per
                 self.exp.store(common.Transition(o, a, r, o_, done))
@@ -179,6 +181,9 @@ class MADDPG(object):
     def update_target(self):
         self.target_actor.load_state_dict(self.actor.state_dict())
         self.target_critic.load_state_dict(self.critic.state_dict())
+        # pop-art
+        self.target_y_mean = self.y_mean
+        self.target_y_square_mean = self.y_square_mean
 
     def update_actor_critic(self):
         # sample minibatch
@@ -210,9 +215,12 @@ class MADDPG(object):
         #bat_a_o_ = self.target_actor(bat_o_)
 
         Gt = bat_r
-        Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
+        #Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
 
         # pop-art
+        target_y_delta = math.sqrt(self.target_y_square_mean - self.target_y_mean**2)
+        Gt[bat_not_done_mask] += self.GAMMA * (target_y_delta * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask] + self.target_y_mean)
+
         beta_t = self.beta * 1. / (1 - math.pow(1-self.beta, self.update_counter))
         y_t = torch.mean(Gt).data.cpu().numpy()[0]
         y_square_t = torch.mean(Gt**2).data.cpu().numpy()[0]
@@ -230,11 +238,11 @@ class MADDPG(object):
         self.y_square_mean = y_square_mean_new
         y_delta = y_delta_new
 
-        Gt -= self.y_mean
-        Gt /= y_delta
+        #Gt -= self.y_mean
+        #Gt /= y_delta
 
         Gt.detach_()
-        eval_o = self.critic(bat_o, bat_a)
+        eval_o = y_delta * self.critic(bat_o, bat_a) + self.y_mean
 
         # per
         w = Variable(torch.Tensor(w)).unsqueeze(1)
@@ -266,7 +274,7 @@ class MADDPG(object):
             bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
         #bat_a_o = self.actor(bat_o)
 
-        obj = torch.mean(self.critic(bat_o, bat_a_o))
+        obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean)
         self.optim_actor.zero_grad()
         obj.backward()
         self.optim_actor.step()    
@@ -293,8 +301,8 @@ class MADDPG(object):
                     tmp_a = self.choose_action(tmp_o)
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
 
-                #o_, r, done, info = self.env.step(self.map_to_action(a))
-                o_, r, done, info = self.env.step(a)
+                o_, r, done, info = self.env.step(self.map_to_action(a))
+                #o_, r, done, info = self.env.step(a)
                 acc_r += r
                 o = o_
                 if done:
