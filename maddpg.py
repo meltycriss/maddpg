@@ -16,6 +16,7 @@ from gym import wrappers
 import os
 from normalized_env import NormalizedEnv
 import math
+import copy
 
 
 class MADDPG(object):
@@ -280,44 +281,49 @@ class MADDPG(object):
         self.critic.eval()
 
         bat_a_o = Variable(bat_a.data.clone())
+
         # only update relevant agents
         if self.DYNAMIC_ACTOR_UPDATE:
             # group data by agent type, so as to modify data in batch mode
-            agent_type = []
-            agent_index = []
-            for i, agent in enumerate(bat_agent):
-                if agent not in agent_type:
-                    agent_type.append(agent)
-                    agent_index.append([])
-                agent_index[agent_type.index(agent)].append(i)
-            for n in xrange(len(agent_type)):
-                agent = agent_type[n]
-                index = agent_index[n]
-                if len(agent)==0:
-                    for i in xrange(self.N):
-                        tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
-                        tmp_bat_a_o = self.actor(tmp_bat_o)
-                        bat_a_o[index,:][:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+            # agent_indexes[i]: list of sample indexes related to agent i
+            agent_indexes = []
+            for _ in range(self.N):
+                agent_indexes.append([])
+            for index, agents in enumerate(bat_agent):
+                if len(agents)==0:
+                    for agent in range(self.N):
+                        agent_indexes[agent].append(index)
                 else:
-                    for i in agent:
-                        tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
-                        tmp_bat_a_o = self.actor(tmp_bat_o)
-                        bat_a_o[index,:][:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+                    for agent in agents:
+                        agent_indexes[agent].append(index)
+            # to avoid using syntax like bat_a_o[index, xxx], use torch.cat instead
+            bat_a_o = []
+            for i in xrange(self.N):
+                index = agent_indexes[i]
+                tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
+                tmp_bat_a_o = self.actor(tmp_bat_o)
+                curr_a_o = Variable(bat_a[:,i*self.n_a:(i+1)*self.n_a].data.clone())
+                if len(curr_a_o.data.shape)==1:
+                    curr_a_o = curr_a_o.unsqueeze(1)
+                curr_a_o[index,:] = tmp_bat_a_o
+                bat_a_o.append(curr_a_o)
+            bat_a_o = torch.cat(bat_a_o, 1)
         else:
             for i in xrange(self.N):
-                #index = range(self.BATCH_SIZE)
-                #tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
-                #tmp_bat_a_o = self.actor(tmp_bat_o)
-                #bat_a_o[index,:][:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
                 tmp_bat_o = bat_o[:,i*self.n_s:(i+1)*self.n_s]
                 tmp_bat_a_o = self.actor(tmp_bat_o)
                 bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
         #bat_a_o = self.actor(bat_o)
 
         obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean)
+        # clear the grad from previous critic update
+        self.optim_critic.zero_grad()
         self.optim_actor.zero_grad()
         obj.backward()
+        print self.actor.fc1.weight.grad
+
         self.optim_actor.step()    
+        
 
         self.critic.train()
 
