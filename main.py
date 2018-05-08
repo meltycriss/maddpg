@@ -19,7 +19,8 @@ control_args = arguments.get_control_args()
 
 ENV_NAME = control_args['env']
 env = gym.make(ENV_NAME)
-#env = NormalizedEnv(env)
+if control_args['env_normalized']:
+    env = NormalizedEnv(env)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = control_args['gpu']
 

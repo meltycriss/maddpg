@@ -30,9 +30,12 @@ class MADDPG(object):
             target_update_frequency=200, 
             batch_size=64,
             random_process=True,
-            max_step=None
+            max_step=None,
+            dynamic_actor_update=False,
             ):
         self.CUDA = torch.cuda.is_available()
+        self.DYNAMIC_ACTOR_UPDATE = dynamic_actor_update
+        self.ENV_NORMALIZED = env.class_name() == 'NormalizedEnv'
 
         self.orig_env = (env) #for recording
         if max_step is not None:
@@ -138,11 +141,16 @@ class MADDPG(object):
                         epsilon -= self.EPSILON_DECAY
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
                     
-                o_, r, done, info = self.env.step(self.map_to_action(a))
-                #o_, r, done, info = self.env.step(a)
+                if self.ENV_NORMALIZED:
+                    o_, r, done, info = self.env.step(a)
+                else:
+                    o_, r, done, info = self.env.step(self.map_to_action(a))
 
                 # per
-                self.exp.store(common.Transition(o, a, r, o_, done))
+                if self.DYNAMIC_ACTOR_UPDATE:
+                    self.exp.store(common.Transition_agent(o, a, r, o_, done, info['agent']))
+                else:
+                    self.exp.store(common.Transition(o, a, r, o_, done))
 
                 # uer
                 #self.exp.push(o, a, r, o_, done)
@@ -190,7 +198,10 @@ class MADDPG(object):
 
         # per
         minibatch, w, e_id = self.exp.sample(self.total_step)
-        minibatch = common.Transition(*zip(*minibatch))
+        if self.DYNAMIC_ACTOR_UPDATE:
+            minibatch = common.Transition_agent(*zip(*minibatch))
+        else:
+            minibatch = common.Transition(*zip(*minibatch))
 
         #minibatch = common.Transition(*zip(*self.exp.sample(self.BATCH_SIZE)))
         bat_o = Variable(torch.Tensor(minibatch.state))
@@ -205,6 +216,7 @@ class MADDPG(object):
             bat_r = bat_r.cuda()
             bat_o_ = bat_o_.cuda()
             bat_not_done_mask = bat_not_done_mask.cuda()
+        bat_agent = minibatch.agent if self.DYNAMIC_ACTOR_UPDATE else None
         
         # update critic
         bat_a_o_ = Variable(bat_a.data.clone())
@@ -268,10 +280,38 @@ class MADDPG(object):
         self.critic.eval()
 
         bat_a_o = Variable(bat_a.data.clone())
-        for i in xrange(self.N):
-            tmp_bat_o = bat_o[:,i*self.n_s:(i+1)*self.n_s]
-            tmp_bat_a_o = self.actor(tmp_bat_o)
-            bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+        # only update relevant agents
+        if self.DYNAMIC_ACTOR_UPDATE:
+            # group data by agent type, so as to modify data in batch mode
+            agent_type = []
+            agent_index = []
+            for i, agent in enumerate(bat_agent):
+                if agent not in agent_type:
+                    agent_type.append(agent)
+                    agent_index.append([])
+                agent_index[agent_type.index(agent)].append(i)
+            for n in xrange(len(agent_type)):
+                agent = agent_type[n]
+                index = agent_index[n]
+                if len(agent)==0:
+                    for i in xrange(self.N):
+                        tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
+                        tmp_bat_a_o = self.actor(tmp_bat_o)
+                        bat_a_o[index,:][:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+                else:
+                    for i in agent:
+                        tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
+                        tmp_bat_a_o = self.actor(tmp_bat_o)
+                        bat_a_o[index,:][:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+        else:
+            for i in xrange(self.N):
+                #index = range(self.BATCH_SIZE)
+                #tmp_bat_o = bat_o[index,:][:,i*self.n_s:(i+1)*self.n_s]
+                #tmp_bat_a_o = self.actor(tmp_bat_o)
+                #bat_a_o[index,:][:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+                tmp_bat_o = bat_o[:,i*self.n_s:(i+1)*self.n_s]
+                tmp_bat_a_o = self.actor(tmp_bat_o)
+                bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
         #bat_a_o = self.actor(bat_o)
 
         obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean)
@@ -301,8 +341,10 @@ class MADDPG(object):
                     tmp_a = self.choose_action(tmp_o)
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
 
-                o_, r, done, info = self.env.step(self.map_to_action(a))
-                #o_, r, done, info = self.env.step(a)
+                if self.ENV_NORMALIZED:
+                    o_, r, done, info = self.env.step(a)
+                else:
+                    o_, r, done, info = self.env.step(self.map_to_action(a))
                 acc_r += r
                 o = o_
                 if done:
