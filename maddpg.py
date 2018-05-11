@@ -33,10 +33,12 @@ class MADDPG(object):
             random_process=True,
             max_step=None,
             dynamic_actor_update=False,
+            popart=False,
             ):
         self.CUDA = torch.cuda.is_available()
         self.DYNAMIC_ACTOR_UPDATE = dynamic_actor_update
         self.ENV_NORMALIZED = env.class_name() == 'NormalizedEnv'
+        self.POPART = popart
 
         self.orig_env = (env) #for recording
         if max_step is not None:
@@ -228,34 +230,34 @@ class MADDPG(object):
         #bat_a_o_ = self.target_actor(bat_o_)
 
         Gt = bat_r
-        #Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
 
-        # pop-art
-        target_y_delta = math.sqrt(self.target_y_square_mean - self.target_y_mean**2)
-        Gt[bat_not_done_mask] += self.GAMMA * (target_y_delta * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask] + self.target_y_mean)
+        if self.POPART:
+            # pop-art
+            target_y_delta = math.sqrt(self.target_y_square_mean - self.target_y_mean**2)
+            Gt[bat_not_done_mask] += self.GAMMA * (target_y_delta * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask] + self.target_y_mean)
 
-        beta_t = self.beta * 1. / (1 - math.pow(1-self.beta, self.update_counter))
-        y_t = torch.mean(Gt).data.cpu().numpy()[0]
-        y_square_t = torch.mean(Gt**2).data.cpu().numpy()[0]
-        y_mean_new = (1.-beta_t) * self.y_mean + beta_t * y_t
-        y_square_mean_new = (1.-beta_t) * self.y_square_mean + beta_t * y_square_t
-        y_delta = math.sqrt(self.y_square_mean - self.y_mean**2)
-        y_delta_new = math.sqrt(y_square_mean_new - y_mean_new**2)
+            beta_t = self.beta * 1. / (1 - math.pow(1-self.beta, self.update_counter))
+            y_t = torch.mean(Gt).data.cpu().numpy()[0]
+            y_square_t = torch.mean(Gt**2).data.cpu().numpy()[0]
+            y_mean_new = (1.-beta_t) * self.y_mean + beta_t * y_t
+            y_square_mean_new = (1.-beta_t) * self.y_square_mean + beta_t * y_square_t
+            y_delta = math.sqrt(self.y_square_mean - self.y_mean**2)
+            y_delta_new = math.sqrt(y_square_mean_new - y_mean_new**2)
 
-        self.critic.fc_final.weight.data *= y_delta / y_delta_new
-        self.critic.fc_final.bias.data *= y_delta
-        self.critic.fc_final.bias.data += (self.y_mean - y_mean_new)
-        self.critic.fc_final.bias.data /= y_delta_new
+            self.critic.fc_final.weight.data *= y_delta / y_delta_new
+            self.critic.fc_final.bias.data *= y_delta
+            self.critic.fc_final.bias.data += (self.y_mean - y_mean_new)
+            self.critic.fc_final.bias.data /= y_delta_new
 
-        self.y_mean = y_mean_new
-        self.y_square_mean = y_square_mean_new
-        y_delta = y_delta_new
-
-        #Gt -= self.y_mean
-        #Gt /= y_delta
+            self.y_mean = y_mean_new
+            self.y_square_mean = y_square_mean_new
+            y_delta = y_delta_new
+        else:
+            Gt[bat_not_done_mask] += self.GAMMA * self.target_critic(bat_o_, bat_a_o_)[bat_not_done_mask]
 
         Gt.detach_()
-        eval_o = y_delta * self.critic(bat_o, bat_a) + self.y_mean
+        # pop-art
+        eval_o = y_delta * self.critic(bat_o, bat_a) + self.y_mean if self.POPART else self.critic(bat_o, bat_a)
 
         # per
         w = Variable(torch.Tensor(w)).unsqueeze(1)
@@ -315,13 +317,12 @@ class MADDPG(object):
                 bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
         #bat_a_o = self.actor(bat_o)
 
-        obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean)
+        # pop-art
+        obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
         # clear the grad from previous critic update
         self.optim_critic.zero_grad()
         self.optim_actor.zero_grad()
         obj.backward()
-        print self.actor.fc1.weight.grad
-
         self.optim_actor.step()    
         
 

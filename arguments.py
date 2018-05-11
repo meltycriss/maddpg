@@ -2,7 +2,7 @@ import argparse
 
 control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load', 'env_normalized']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
-        'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 'dynamic_actor_update']
+        'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 'dynamic_actor_update', 'popart']
 
 def get_args():
     parser = argparse.ArgumentParser(description='rl')
@@ -34,6 +34,7 @@ def get_args():
     parser.add_argument('--random_process', type=bool)
     parser.add_argument('--max_step', type=int)
     parser.add_argument('--dynamic_actor_update', type=bool)
+    parser.add_argument('--popart', type=bool)
 
     ##############################################
     # remember to change global model_args
