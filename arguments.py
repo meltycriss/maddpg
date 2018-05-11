@@ -1,5 +1,13 @@
 import argparse
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load', 'env_normalized']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
         'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 'dynamic_actor_update', 'popart']
@@ -12,10 +20,10 @@ def get_args():
     parser.add_argument('--env', type=str, required=True)
     parser.add_argument('--repeat', type=int, default=3)
     parser.add_argument('--n_test', type=int, default=100)
-    parser.add_argument('--manual', type=bool, default=False)
+    parser.add_argument('--manual', type=str2bool, default=False)
     parser.add_argument('--save_interval', type=int, default=1000)
     parser.add_argument('--load', type=str)
-    parser.add_argument('--env_normalized', type=bool, default=True)
+    parser.add_argument('--env_normalized', type=str2bool, default=True)
     
     ##############################################
     # remember to change global control_args
@@ -31,10 +39,10 @@ def get_args():
     parser.add_argument('--gamma', type=float)
     parser.add_argument('--target_update_frequency', type=int)
     parser.add_argument('--batch_size', type=int)
-    parser.add_argument('--random_process', type=bool)
+    parser.add_argument('--random_process', type=str2bool)
     parser.add_argument('--max_step', type=int)
-    parser.add_argument('--dynamic_actor_update', type=bool)
-    parser.add_argument('--popart', type=bool)
+    parser.add_argument('--dynamic_actor_update', type=str2bool)
+    parser.add_argument('--popart', type=str2bool)
 
     ##############################################
     # remember to change global model_args
