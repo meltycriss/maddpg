@@ -33,12 +33,14 @@ def repeat_level(root, intervals):
     # train data
     df = util.concat_times(root, csv_name='train_data.csv')
     df[common.S_MODEL] = os.path.basename(root)
-    # test data
     for interval in intervals:
         util.plot(df[df[common.S_EPI] % interval == 0], dir=root, name='train_data_gap_{}.png'.format(interval))
+        util.plot_custom(df[df[common.S_EPI] % interval == 0], condition=common.S_TIMES, unit=common.S_MODEL, dir=root, name='train_data_sep_gap_{}.png'.format(interval))
+    # test data
     df = util.concat_times(root, csv_name='test_data.csv')
     df[common.S_MODEL] = os.path.basename(root)
     util.plot(df[df[common.S_EPI] >= 0], dir=root, name='test_data.png')
+    util.plot_custom(df[df[common.S_EPI] >= 0], condition=common.S_TIMES, unit=common.S_MODEL, dir=root, name='test_data_sep.png')
 
 args = get_args()
 if args['level']=='model':

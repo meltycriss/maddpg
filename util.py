@@ -10,7 +10,8 @@ def concat_times(dir, csv_name='train_data.csv'):
     frames = []
     for i, subfolder in enumerate(subfolders):
         df = pd.read_csv('{}/{}/{}'.format(dir, subfolder, csv_name)).drop(['Unnamed: 0'], axis=1)
-        df[common.S_TIMES] = i
+        #df[common.S_TIMES] = i
+        df[common.S_TIMES] = subfolder
         frames.append(df)
     res = pd.concat(frames, ignore_index=True)
     return res
@@ -36,5 +37,11 @@ def plot(df, dir='.', name='sum.png', **kwargs):
         unit = common.S_TIMES
     if common.S_MODEL in headers:
         condition = common.S_MODEL
+    sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
+    plt.savefig('{}/{}'.format(dir, name), dpi=200)
+
+def plot_custom(df, unit=None, condition=None, dir='.', name='sum.png', **kwargs):
+    plt.figure()
+    headers = list(df)
     sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
     plt.savefig('{}/{}'.format(dir, name), dpi=200)
