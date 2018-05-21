@@ -64,8 +64,8 @@ for i in trange(len(args), desc='model', leave=True):
         maddpg=MADDPG(env, **arg)
         if control_args.has_key('load'):
             model_path = control_args['load']
-            maddpg.load_actor(os.path.join(model_path, 'actor.pt'))
-            maddpg.load_critic(os.path.join(model_path, 'critic.pt'))
+            maddpg.load_actor(model_path)
+            maddpg.load_critic(model_path)
         maddpg.train(dir, control_args['save_interval'])
         maddpg.save(dir)
         maddpg.test(dir, n=control_args['n_test'])

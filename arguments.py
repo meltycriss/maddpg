@@ -10,7 +10,8 @@ def str2bool(v):
 
 control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load', 'env_normalized']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
-        'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 'dynamic_actor_update', 'popart']
+        'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 
+        'dynamic_actor_update', 'popart', 'actor', 'critic']
 
 def get_args():
     parser = argparse.ArgumentParser(description='rl')
@@ -43,6 +44,8 @@ def get_args():
     parser.add_argument('--max_step', type=int)
     parser.add_argument('--dynamic_actor_update', type=str2bool)
     parser.add_argument('--popart', type=str2bool)
+    parser.add_argument('--actor', type=str)
+    parser.add_argument('--critic', type=str)
 
     ##############################################
     # remember to change global model_args

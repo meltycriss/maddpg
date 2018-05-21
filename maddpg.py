@@ -1,6 +1,6 @@
 import common
-from model import Actor
-from model import Critic
+from model import ActorRegistry
+from model import CriticRegistry
 #from memory import Experience
 from per import Experience #prioritized experience replay
 import torch.optim as optim
@@ -17,6 +17,8 @@ import os
 from normalized_env import NormalizedEnv
 import math
 import copy
+import inspect
+import pickle
 
 
 class MADDPG(object):
@@ -34,7 +36,14 @@ class MADDPG(object):
             max_step=None,
             dynamic_actor_update=False,
             popart=False,
+            actor='standard',
+            critic='43',
             ):
+        # configuration log
+        frame = inspect.currentframe()
+        args, _, _, values = inspect.getargvalues(frame)
+        self.config = ['{}: {}'.format(arg, values[arg]) for arg in args]
+
         self.CUDA = torch.cuda.is_available()
         self.DYNAMIC_ACTOR_UPDATE = dynamic_actor_update
         self.ENV_NORMALIZED = env.class_name() == 'NormalizedEnv'
@@ -59,10 +68,10 @@ class MADDPG(object):
         self.LOW = self.env.action_space.low
         self.HIGH = self.env.action_space.high
         
-        self.actor = Actor(self.n_s, self.n_a)
-        self.critic = Critic(self.N_S, self.N_A)
-        self.target_actor = Actor(self.n_s, self.n_a)
-        self.target_critic = Critic(self.N_S, self.N_A)
+        self.actor = ActorRegistry[actor](self.n_s, self.n_a)
+        self.critic = CriticRegistry[critic](self.N_S, self.N_A)
+        self.target_actor = ActorRegistry[actor](self.n_s, self.n_a)
+        self.target_critic = CriticRegistry[critic](self.N_S, self.N_A)
         self.target_actor.eval()
         self.target_critic.eval()
         self.target_actor.load_state_dict(self.actor.state_dict())
@@ -120,6 +129,7 @@ class MADDPG(object):
         self.update_counter = 0
         self.total_step = 0
         epsilon = self.EPSILON
+        self.update_target()
         for epi in trange(self.MAX_EPI, desc='train epi', leave=True):
             for i in xrange(self.N):
                 self.random_processes[i].reset_states()
@@ -368,14 +378,22 @@ class MADDPG(object):
         torch.save(self.critic.state_dict(), '{}/critic{}.pt'.format(dir, suffix))
         if save_data:
             self.data.to_csv('{}/train_data{}.csv'.format(dir, suffix))
-        # MAYBE have to save and load y_mean and y_square_mean if using pop-art
+        with open('{}/config{}.txt'.format(dir, suffix), 'w') as f:
+            for item in self.config:
+                f.write(str(item)+'\n')
+        if self.POPART:
+            with open('{}/popart{}.pkl'.format(dir, suffix), 'w') as f:
+                pickle.dump([self.y_mean, self.y_square_mean], f)
 
 
-    def load_actor(self, dir):
-        self.actor.load_state_dict(torch.load(dir))
+    def load_actor(self, dir, suffix=''):
+        self.actor.load_state_dict(torch.load('{}/actor{}.pt'.format(dir, suffix)))
 
-    def load_critic(self, dir):
-        self.critic.load_state_dict(torch.load(dir))
+    def load_critic(self, dir, suffix=''):
+        self.critic.load_state_dict(torch.load('{}/critic{}.pt'.format(dir, suffix)))
+        if self.POPART:
+            with open('{}/popart{}.pkl'.format(dir, suffix)) as f:
+                self.y_mean, self.y_square_mean = pickle.load(f)
 
     def get_data(self):
         return self.data
