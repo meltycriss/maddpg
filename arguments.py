@@ -8,7 +8,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load', 'env_normalized']
+control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load', 'env_normalized', 'train']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
         'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 
         'dynamic_actor_update', 'popart', 'actor', 'critic']
@@ -25,6 +25,7 @@ def get_args():
     parser.add_argument('--save_interval', type=int, default=1000)
     parser.add_argument('--load', type=str)
     parser.add_argument('--env_normalized', type=str2bool, default=True)
+    parser.add_argument('--train', type=str2bool, default=True)
     
     ##############################################
     # remember to change global control_args
