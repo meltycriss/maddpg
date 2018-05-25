@@ -34,7 +34,7 @@ class MADDPG(object):
             batch_size=64,
             random_process=True,
             max_step=None,
-            dynamic_actor_update=False,
+            actor_update_mode='default',
             popart=False,
             actor='standard',
             critic='43',
@@ -45,9 +45,9 @@ class MADDPG(object):
         self.config = ['{}: {}'.format(arg, values[arg]) for arg in args]
 
         self.CUDA = torch.cuda.is_available()
-        self.DYNAMIC_ACTOR_UPDATE = dynamic_actor_update
         self.ENV_NORMALIZED = env.class_name() == 'NormalizedEnv'
         self.POPART = popart
+        self.actor_update_mode=actor_update_mode
 
         self.orig_env = (env) #for recording
         if max_step is not None:
@@ -160,7 +160,7 @@ class MADDPG(object):
                     o_, r, done, info = self.env.step(self.map_to_action(a))
 
                 # per
-                if self.DYNAMIC_ACTOR_UPDATE:
+                if self.actor_update_mode=='dynamic':
                     self.exp.store(common.Transition_agent(o, a, r, o_, done, info['agent']))
                 else:
                     self.exp.store(common.Transition(o, a, r, o_, done))
@@ -211,7 +211,7 @@ class MADDPG(object):
 
         # per
         minibatch, w, e_id = self.exp.sample(self.total_step)
-        if self.DYNAMIC_ACTOR_UPDATE:
+        if self.actor_update_mode=='dynamic':
             minibatch = common.Transition_agent(*zip(*minibatch))
         else:
             minibatch = common.Transition(*zip(*minibatch))
@@ -229,7 +229,7 @@ class MADDPG(object):
             bat_r = bat_r.cuda()
             bat_o_ = bat_o_.cuda()
             bat_not_done_mask = bat_not_done_mask.cuda()
-        bat_agent = minibatch.agent if self.DYNAMIC_ACTOR_UPDATE else None
+        bat_agent = minibatch.agent if self.actor_update_mode=='dynamic' else None
         
         # update critic
         bat_a_o_ = Variable(bat_a.data.clone())
@@ -292,10 +292,11 @@ class MADDPG(object):
         # update actor
         self.critic.eval()
 
-        bat_a_o = Variable(bat_a.data.clone())
 
         # only update relevant agents
-        if self.DYNAMIC_ACTOR_UPDATE:
+        #if self.DYNAMIC_ACTOR_UPDATE:
+        if self.actor_update_mode=='dynamic':
+            bat_a_o = Variable(bat_a.data.clone())
             # group data by agent type, so as to modify data in batch mode
             # agent_indexes[i]: list of sample indexes related to agent i
             agent_indexes = []
@@ -320,20 +321,41 @@ class MADDPG(object):
                 curr_a_o[index,:] = tmp_bat_a_o
                 bat_a_o.append(curr_a_o)
             bat_a_o = torch.cat(bat_a_o, 1)
+            # pop-art
+            obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
+            self.optim_actor.zero_grad()
+            obj.backward()
+            self.optim_actor.step()    
+        # one by one
+        elif 'obo' in self.actor_update_mode:
+            bat_a_o_aux = Variable(bat_a.data.clone())
+            for i in xrange(self.N):
+                tmp_bat_o = bat_o[:,i*self.n_s:(i+1)*self.n_s]
+                tmp_bat_a_o = self.target_actor(tmp_bat_o) if 'target' in self.actor_update_mode else self.actor(tmp_bat_o)
+                bat_a_o_aux[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+            for i in xrange(self.N):
+                bat_a_o = Variable(bat_a_o_aux.data.clone())
+                tmp_bat_o = bat_o[:,i*self.n_s:(i+1)*self.n_s]
+                tmp_bat_a_o = self.actor(tmp_bat_o)
+                bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
+                # pop-art
+                obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
+                self.optim_actor.zero_grad()
+                obj.backward()
+                self.optim_actor.step()    
+        # default
         else:
+            bat_a_o = Variable(bat_a.data.clone())
             for i in xrange(self.N):
                 tmp_bat_o = bat_o[:,i*self.n_s:(i+1)*self.n_s]
                 tmp_bat_a_o = self.actor(tmp_bat_o)
                 bat_a_o[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o
-        #bat_a_o = self.actor(bat_o)
+            # pop-art
+            obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
+            self.optim_actor.zero_grad()
+            obj.backward()
+            self.optim_actor.step()    
 
-        # pop-art
-        obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
-        # clear the grad from previous critic update
-        self.optim_critic.zero_grad()
-        self.optim_actor.zero_grad()
-        obj.backward()
-        self.optim_actor.step()    
         
 
         self.critic.train()

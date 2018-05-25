@@ -28,7 +28,7 @@ def concat_models(dir, csv_name='train_data.csv'):
     res = pd.concat(frames, ignore_index=True)
     return res
 
-def plot(df, dir='.', name='sum.png', **kwargs):
+def plot(df, dir='.', name='sum.png', ylim=None, **kwargs):
     plt.figure()
     headers = list(df)
     unit = None
@@ -37,11 +37,15 @@ def plot(df, dir='.', name='sum.png', **kwargs):
         unit = common.S_TIMES
     if common.S_MODEL in headers:
         condition = common.S_MODEL
+    if ylim is not None:
+        sns.plt.ylim(ylim)
     sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
     plt.savefig('{}/{}'.format(dir, name), dpi=200)
 
-def plot_custom(df, unit=None, condition=None, dir='.', name='sum.png', **kwargs):
+def plot_custom(df, unit=None, condition=None, dir='.', name='sum.png', ylim=None, **kwargs):
     plt.figure()
     headers = list(df)
+    if ylim is not None:
+        sns.plt.ylim(ylim)
     sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
     plt.savefig('{}/{}'.format(dir, name), dpi=200)
