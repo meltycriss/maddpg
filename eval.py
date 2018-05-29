@@ -3,6 +3,8 @@ import os
 import util
 import common
 import argparse
+import multiprocessing
+from joblib import Parallel, delayed
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -18,7 +20,7 @@ def str2float(x):
 
 def get_args():
     parser = argparse.ArgumentParser(description='eval')
-    parser.add_argument('-p', '--path', type=str, required=True)
+    parser.add_argument('-p', '--path', type=str, nargs='+', required=True)
     parser.add_argument('-l', '--level', type=str, choices=['model', 'repeat'], required=True)
     parser.add_argument('-i', '--interval', type=int, nargs='+', default=[1, 10, 100])
     parser.add_argument('--train', type=str2bool, default=True)
@@ -29,6 +31,7 @@ def get_args():
     return res
 
 def model_level(root, intervals, train, test, ylim):
+    print 'processing: {}'.format(root)
     # model level
     # train data
     if train:
@@ -63,9 +66,20 @@ def repeat_level(root, intervals, train, test, ylim):
 
 args = get_args()
 if args['level']=='model':
-    model_level(args['path'], args['interval'], args['train'], args['test'], args['ylim'])
+    # parallel joblib version
+    num_cores = multiprocessing.cpu_count()/2
+    Parallel(n_jobs=num_cores)\
+        (delayed(model_level)(path, args['interval'], args['train'], args['test'], args['ylim'])\
+        for path in args['path'])
+    #for path in args['path']:
+    #    model_level(path, args['interval'], args['train'], args['test'], args['ylim'])
 elif args['level']=='repeat':
-    repeat_level(args['path'], args['interval'], args['train'], args['test'], args['ylim'])
+    num_cores = multiprocessing.cpu_count()/2
+    Parallel(n_jobs=num_cores)\
+        (delayed(repeat_level)(path, args['interval'], args['train'], args['test'], args['ylim'])\
+        for path in args['path'])
+    #for path in args['path']:
+    #    repeat_level(path, args['interval'], args['train'], args['test'], args['ylim'])
 
 
 

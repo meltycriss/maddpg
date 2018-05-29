@@ -41,6 +41,7 @@ def plot(df, dir='.', name='sum.png', ylim=None, **kwargs):
         sns.plt.ylim(ylim)
     sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
     plt.savefig('{}/{}'.format(dir, name), dpi=200)
+    plt.close()
 
 def plot_custom(df, unit=None, condition=None, dir='.', name='sum.png', ylim=None, **kwargs):
     plt.figure()
@@ -49,3 +50,4 @@ def plot_custom(df, unit=None, condition=None, dir='.', name='sum.png', ylim=Non
         sns.plt.ylim(ylim)
     sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
     plt.savefig('{}/{}'.format(dir, name), dpi=200)
+    plt.close()

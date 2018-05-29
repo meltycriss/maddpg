@@ -31,9 +31,8 @@ if not os.path.exists(root):
 args = None
 if control_args['manual']:
     args = [
-            {'lr_critic':1e-3, 'lr_actor':1e-4},
-            {'lr_critic':1e-2, 'lr_actor':1e-3},
-            {'lr_critic':1e-1, 'lr_actor':1e-2},
+            {'actor_update_mode':'default',},
+            {'actor_update_mode':'obo',},
             ]
 else:
     model_args = arguments.get_model_args()
