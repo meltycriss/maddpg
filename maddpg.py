@@ -20,6 +20,7 @@ import copy
 import inspect
 import pickle
 import random
+from logger import Logger
 
 
 class MADDPG(object):
@@ -129,11 +130,17 @@ class MADDPG(object):
         title = {common.S_EPI:[], common.S_TOTAL_R:[]}
         self.data = pd.DataFrame(title)
         self.RAND_PROC = random_process_mode
+
+        # logger
+        self.logger = None
+        self.epi_log_freq = 100
+        self.step_log_freq = 5000
         
     def train(self, dir=None, interval=1000):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/train_record'.format(dir), force=True)
             os.mkdir(os.path.join(dir, 'models'))
+            self.logger = Logger('{}/logs'.format(dir))
         self.update_counter = 0
         self.total_step = 0
         epsilon = self.EPSILON_START
@@ -145,6 +152,7 @@ class MADDPG(object):
         
             counter = 0
             acc_r = 0
+            epi_log = {}
             while True:
                 counter += 1
                 self.total_step += 1
@@ -204,6 +212,24 @@ class MADDPG(object):
 
                 acc_r += r
                 o = o_
+
+                # epi_log
+                if (epi+1) % self.epi_log_freq == 0:
+                    log_info = info['log_info']
+                    if log_info['int_coll']:
+                        epi_log['end_status'] = 0
+                    elif log_info['ext_coll']:
+                        epi_log['end_status'] = 1
+                    elif log_info['success']:
+                        epi_log['end_status'] = 2
+                    else:
+                        epi_log['end_status'] = 3
+                    epi_log['min_goal_dis'] = min(log_info['goal_dis'], epi_log['min_goal_dis']) if epi_log.has_key('min_goal_dis') else log_info['goal_dis']
+                    epi_log['avg_avg_agent_center_dis'] = epi_log['avg_avg_agent_center_dis'] + 1./counter * (log_info['avg_agent_center_dis']-epi_log['avg_avg_agent_center_dis']) if epi_log.has_key('avg_avg_agent_center_dis') else log_info['avg_agent_center_dis']
+                    epi_log['min_avg_agent_center_dis'] = min(epi_log['min_avg_agent_center_dis'], log_info['avg_agent_center_dis']) if epi_log.has_key('min_avg_agent_center_dis') else log_info['avg_agent_center_dis']
+                    epi_log['avg_min_inter_agent_dis'] = epi_log['avg_min_inter_agent_dis'] + 1./counter * (log_info['min_inter_agent_dis']-epi_log['avg_min_inter_agent_dis']) if epi_log.has_key('avg_min_inter_agent_dis') else log_info['min_inter_agent_dis']
+                    epi_log['min_min_inter_agent_dis'] = min(epi_log['min_min_inter_agent_dis'], log_info['min_inter_agent_dis']) if epi_log.has_key('min_min_inter_agent_dis') else log_info['min_inter_agent_dis']
+
                 if done:
                     break
             if dir is not None:
@@ -211,6 +237,11 @@ class MADDPG(object):
                     self.save(os.path.join(dir, 'models'), str(epi+1), save_data=False)
             s = pd.Series([epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
             self.data = self.data.append(s, ignore_index=True)
+            
+            # log
+            if (epi+1) % self.epi_log_freq == 0:
+                for key, value in epi_log.items():
+                    self.logger.scalar_summary(key, value, epi+1)
     
     def choose_action(self, state):
         self.actor.eval()
@@ -305,6 +336,7 @@ class MADDPG(object):
         loss = w*loss
         loss = torch.mean(loss)
 
+
         # uer
         #criterion = nn.MSELoss()
         #if self.CUDA:
@@ -314,6 +346,7 @@ class MADDPG(object):
         self.optim_critic.zero_grad()
         loss.backward()
         self.optim_critic.step()
+
         
         # update actor
         self.critic.eval()
@@ -383,6 +416,17 @@ class MADDPG(object):
             self.optim_actor.step()    
 
         
+        # log
+        if (self.total_step+1) % self.step_log_freq == 0:
+            self.logger.scalar_summary('critic_loss', loss.data.cpu().numpy()[0], self.total_step)
+            for key, value in self.critic.named_parameters():
+                key = key.replace('.', '/')
+                self.logger.histo_summary('critic/'+key, value.data.cpu().numpy(), self.total_step)
+                self.logger.histo_summary('critic/'+key+'/grad', value.grad.data.cpu().numpy(), self.total_step)
+            for key, value in self.actor.named_parameters():
+                key = key.replace('.', '/')
+                self.logger.histo_summary('actor/'+key, value.data.cpu().numpy(), self.total_step)
+                self.logger.histo_summary('actor/'+key+'/grad', value.grad.data.cpu().numpy(), self.total_step)
 
         self.critic.train()
 
