@@ -19,6 +19,7 @@ import math
 import copy
 import inspect
 import pickle
+import random
 
 
 class MADDPG(object):
@@ -26,18 +27,21 @@ class MADDPG(object):
             mem_size=int(1e6), 
             lr_critic=1e-3, 
             lr_actor=1e-4, 
-            epsilon=1., 
             max_epi=int(1e4), 
             epsilon_decay=1./(1e5), 
             gamma=.99, 
             target_update_frequency=200, 
             batch_size=64,
-            random_process=True,
+            random_process_mode='default',
             max_step=None,
             actor_update_mode='default',
             popart=False,
             actor='standard',
             critic='43',
+            epsilon_start=1.,
+            epsilon_end=.01,
+            epsilon_rate=1./200,
+            partition_num=100,
             ):
         # configuration log
         frame = inspect.currentframe()
@@ -92,7 +96,7 @@ class MADDPG(object):
 
         # per
         self.total_step = 0
-        self.PARTITION_NUM = 100
+        self.PARTITION_NUM = partition_num
         self.LEARN_START = mem_size/self.PARTITION_NUM+1
         exp_conf = {
                 'size': mem_size,
@@ -112,15 +116,19 @@ class MADDPG(object):
             random_process = OrnsteinUhlenbeckProcess(\
                     size=self.n_a, theta=.15, mu=0, sigma=.2)
             self.random_processes.append(random_process)
-        self.EPSILON = epsilon 
+        self.EPSILON_START = epsilon_start
+        self.EPSILON_END = epsilon_end
+        # only default random process mode will use epsilon decay
         self.EPSILON_DECAY = epsilon_decay
+        # other random process mode will use epsilon rate
+        self.EPSILON_RATE = epsilon_rate
         self.GAMMA = gamma
         self.TARGET_UPDATE_FREQUENCY = target_update_frequency
         self.BATCH_SIZE = batch_size
 
         title = {common.S_EPI:[], common.S_TOTAL_R:[]}
         self.data = pd.DataFrame(title)
-        self.RAND_PROC = random_process
+        self.RAND_PROC = random_process_mode
         
     def train(self, dir=None, interval=1000):
         if dir is not None:
@@ -128,7 +136,7 @@ class MADDPG(object):
             os.mkdir(os.path.join(dir, 'models'))
         self.update_counter = 0
         self.total_step = 0
-        epsilon = self.EPSILON
+        epsilon = self.EPSILON_START
         self.update_target()
         for epi in trange(self.MAX_EPI, desc='train epi', leave=True):
             for i in xrange(self.N):
@@ -144,14 +152,32 @@ class MADDPG(object):
                 #if dir is not None:
                 #    self.env.render()
                 
+                if 'chunk' in self.RAND_PROC:
+                    noise_flag = True if random.random()<epsilon else False
+                    epsilon = self.EPSILON_END + (self.EPSILON_START - self.EPSILON_END) *\
+                            math.exp(-1. * self.total_step * self.EPSILON_RATE)
                 a = np.zeros(self.N_A)
                 for i in xrange(self.N):
                     tmp_o = o[i*self.n_s:(i+1)*self.n_s]
                     tmp_a = self.choose_action(tmp_o)
-                    if self.RAND_PROC:
+                    # different noise mode
+                    # decaying noise
+                    if 'default' in self.RAND_PROC:
                         tmp_a += max(epsilon, 0)*self.random_processes[i].sample()
-                        tmp_a = np.clip(tmp_a, -1., 1.)
                         epsilon -= self.EPSILON_DECAY
+                    if 'exp' in self.RAND_PROC:
+                        tmp_a += max(epsilon, 0)*self.random_processes[i].sample()
+                        epsilon = self.EPSILON_END + (self.EPSILON_START - self.EPSILON_END) *\
+                                math.exp(-1. * self.total_step * self.EPSILON_RATE)
+                    # epsilon greedy like noise
+                    if 'sep' in self.RAND_PROC:
+                        tmp_a += self.random_processes[i].sample() if random.random()<epsilon else 0.
+                        epsilon = self.EPSILON_END + (self.EPSILON_START - self.EPSILON_END) *\
+                                math.exp(-1. * self.total_step * self.EPSILON_RATE)
+                    if 'chunk' in self.RAND_PROC:
+                        tmp_a += self.random_processes[i].sample() if noise_flag else 0.
+
+                    tmp_a = np.clip(tmp_a, -1., 1.)
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
                     
                 if self.ENV_NORMALIZED:

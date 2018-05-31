@@ -55,6 +55,10 @@ model_names = ['standard' if name=='' else name  for name in model_names]
 for i in trange(len(args), desc='model', leave=True):
     model_dir = '{}/{}'.format(root, model_names[i])
     os.mkdir(model_dir)
+    # log cmd
+    with open('{}/cmd_config.txt'.format(model_dir), 'w') as f:
+        for k, v in control_args.items():
+            f.write(str(k)+': '+str(v)+'\n')
     arg = args[i]
     # repeat loop
     for n in trange(control_args['repeat'], desc='repeat', leave=True):

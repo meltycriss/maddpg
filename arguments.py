@@ -10,8 +10,9 @@ def str2bool(v):
 
 control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interval', 'load', 'env_normalized', 'train']
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
-        'gamma', 'target_update_frequency', 'batch_size', 'random_process', 'max_step', 
-        'actor_update_mode', 'popart', 'actor', 'critic']
+        'gamma', 'target_update_frequency', 'batch_size', 'random_process_mode', 'max_step', 
+        'actor_update_mode', 'popart', 'actor', 'critic', 'epsilon_start', 'epsilon_end', 
+        'epsilon_rate', 'partition_num']
 
 def get_args():
     parser = argparse.ArgumentParser(description='rl')
@@ -41,12 +42,16 @@ def get_args():
     parser.add_argument('--gamma', type=float)
     parser.add_argument('--target_update_frequency', type=int)
     parser.add_argument('--batch_size', type=int)
-    parser.add_argument('--random_process', type=str2bool)
+    parser.add_argument('--random_process_mode', type=str)
     parser.add_argument('--max_step', type=int)
     parser.add_argument('--actor_update_mode', type=str, choices=['default', 'dynamic', 'obo', 'obo_target'])
     parser.add_argument('--popart', type=str2bool)
     parser.add_argument('--actor', type=str)
     parser.add_argument('--critic', type=str)
+    parser.add_argument('--epsilon_start', type=float)
+    parser.add_argument('--epsilon_end', type=float)
+    parser.add_argument('--epsilon_rate', type=float)
+    parser.add_argument('--partition_num', type=int)
 
     ##############################################
     # remember to change global model_args
