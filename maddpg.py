@@ -43,6 +43,8 @@ class MADDPG(object):
             epsilon_end=.01,
             epsilon_rate=1./200,
             partition_num=100,
+            env_log_freq=100,
+            model_log_freq=500,
             ):
         # configuration log
         frame = inspect.currentframe()
@@ -133,8 +135,9 @@ class MADDPG(object):
 
         # logger
         self.logger = None
-        self.epi_log_freq = 100
-        self.step_log_freq = 5000
+        self.env_log_freq = env_log_freq
+        self.model_log_freq = model_log_freq
+        self.step = 0
         
     def train(self, dir=None, interval=1000):
         if dir is not None:
@@ -145,16 +148,18 @@ class MADDPG(object):
         self.total_step = 0
         epsilon = self.EPSILON_START
         self.update_target()
-        for epi in trange(self.MAX_EPI, desc='train epi', leave=True):
+        for self.epi in trange(self.MAX_EPI, desc='train epi', leave=True):
             for i in xrange(self.N):
                 self.random_processes[i].reset_states()
             o = self.env.reset()
         
-            counter = 0
+            self.step = 0
             acc_r = 0
+            # log
             epi_log = {}
+            noise_ratios = []
             while True:
-                counter += 1
+                self.step += 1
                 self.total_step += 1
                 
                 #if dir is not None:
@@ -168,25 +173,37 @@ class MADDPG(object):
                 for i in xrange(self.N):
                     tmp_o = o[i*self.n_s:(i+1)*self.n_s]
                     tmp_a = self.choose_action(tmp_o)
+
                     # different noise mode
                     # decaying noise
                     if 'default' in self.RAND_PROC:
-                        tmp_a += max(epsilon, 0)*self.random_processes[i].sample()
+                        noise = max(epsilon, 0)*self.random_processes[i].sample()
+                        tmp_a += noise
                         epsilon -= self.EPSILON_DECAY
                     if 'exp' in self.RAND_PROC:
-                        tmp_a += max(epsilon, 0)*self.random_processes[i].sample()
+                        noise = max(epsilon, 0)*self.random_processes[i].sample()
+                        tmp_a += noise
                         epsilon = self.EPSILON_END + (self.EPSILON_START - self.EPSILON_END) *\
                                 math.exp(-1. * self.total_step * self.EPSILON_RATE)
                     # epsilon greedy like noise
                     if 'sep' in self.RAND_PROC:
-                        tmp_a += self.random_processes[i].sample() if random.random()<epsilon else 0.
+                        noise = self.random_processes[i].sample() if random.random()<epsilon else 0.
+                        tmp_a += noise
                         epsilon = self.EPSILON_END + (self.EPSILON_START - self.EPSILON_END) *\
                                 math.exp(-1. * self.total_step * self.EPSILON_RATE)
                     if 'chunk' in self.RAND_PROC:
-                        tmp_a += self.random_processes[i].sample() if noise_flag else 0.
+                        noise = self.random_processes[i].sample() if noise_flag else 0.
+                        tmp_a += noise
 
                     tmp_a = np.clip(tmp_a, -1., 1.)
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
+
+                    # log
+                    if (self.epi+1) % self.env_log_freq == 0:
+                        noise_ratios.append(np.linalg.norm(noise) / np.linalg.norm(tmp_a))
+#                    min_noise_ratio = noise_ratio if self.step==1 and i==0 else min(min_noise_ratio, noise_ratio)
+#                    max_noise_ratio = noise_ratio if self.step==1 and i==0 else max(min_noise_ratio, noise_ratio)
+#                    avg_noise_ratio = noise_ratio if self.step==1 and i==0 else avg_noise_ratio + 1./self.step*(noise_ratio-avg_noise_ratio)
                     
                 if self.ENV_NORMALIZED:
                     o_, r, done, info = self.env.step(a)
@@ -202,7 +219,7 @@ class MADDPG(object):
                 # uer
                 #self.exp.push(o, a, r, o_, done)
                 
-                #if epi>0: 
+                #if self.epi>0: 
                 #if len(self.exp.mem)>self.BATCH_SIZE*25: 
                 if self.total_step > self.LEARN_START:
                     self.update_counter += 1
@@ -214,34 +231,36 @@ class MADDPG(object):
                 o = o_
 
                 # epi_log
-                if (epi+1) % self.epi_log_freq == 0:
-                    log_info = info['log_info']
-                    if log_info['int_coll']:
-                        epi_log['end_status'] = 0
-                    elif log_info['ext_coll']:
-                        epi_log['end_status'] = 1
-                    elif log_info['success']:
-                        epi_log['end_status'] = 2
-                    else:
-                        epi_log['end_status'] = 3
-                    epi_log['min_goal_dis'] = min(log_info['goal_dis'], epi_log['min_goal_dis']) if epi_log.has_key('min_goal_dis') else log_info['goal_dis']
-                    epi_log['avg_avg_agent_center_dis'] = epi_log['avg_avg_agent_center_dis'] + 1./counter * (log_info['avg_agent_center_dis']-epi_log['avg_avg_agent_center_dis']) if epi_log.has_key('avg_avg_agent_center_dis') else log_info['avg_agent_center_dis']
-                    epi_log['min_avg_agent_center_dis'] = min(epi_log['min_avg_agent_center_dis'], log_info['avg_agent_center_dis']) if epi_log.has_key('min_avg_agent_center_dis') else log_info['avg_agent_center_dis']
-                    epi_log['avg_min_inter_agent_dis'] = epi_log['avg_min_inter_agent_dis'] + 1./counter * (log_info['min_inter_agent_dis']-epi_log['avg_min_inter_agent_dis']) if epi_log.has_key('avg_min_inter_agent_dis') else log_info['min_inter_agent_dis']
-                    epi_log['min_min_inter_agent_dis'] = min(epi_log['min_min_inter_agent_dis'], log_info['min_inter_agent_dis']) if epi_log.has_key('min_min_inter_agent_dis') else log_info['min_inter_agent_dis']
+                if (self.epi+1) % self.env_log_freq == 0:
+                    if info.has_key('log_info'):
+                        log_info = info['log_info']
+                        if log_info['int_coll']:
+                            epi_log['end_status'] = 0
+                        elif log_info['ext_coll']:
+                            epi_log['end_status'] = 1
+                        elif log_info['success']:
+                            epi_log['end_status'] = 2
+                        else:
+                            epi_log['end_status'] = 3
+                        epi_log['min_goal_dis'] = min(log_info['goal_dis'], epi_log['min_goal_dis']) if epi_log.has_key('min_goal_dis') else log_info['goal_dis']
+                        epi_log['avg_avg_agent_center_dis'] = epi_log['avg_avg_agent_center_dis'] + 1./self.step * (log_info['avg_agent_center_dis']-epi_log['avg_avg_agent_center_dis']) if epi_log.has_key('avg_avg_agent_center_dis') else log_info['avg_agent_center_dis']
+                        epi_log['min_avg_agent_center_dis'] = min(epi_log['min_avg_agent_center_dis'], log_info['avg_agent_center_dis']) if epi_log.has_key('min_avg_agent_center_dis') else log_info['avg_agent_center_dis']
+                        epi_log['avg_min_inter_agent_dis'] = epi_log['avg_min_inter_agent_dis'] + 1./self.step * (log_info['min_inter_agent_dis']-epi_log['avg_min_inter_agent_dis']) if epi_log.has_key('avg_min_inter_agent_dis') else log_info['min_inter_agent_dis']
+                        epi_log['min_min_inter_agent_dis'] = min(epi_log['min_min_inter_agent_dis'], log_info['min_inter_agent_dis']) if epi_log.has_key('min_min_inter_agent_dis') else log_info['min_inter_agent_dis']
 
                 if done:
                     break
             if dir is not None:
-                if (epi+1) % interval == 0:
-                    self.save(os.path.join(dir, 'models'), str(epi+1), save_data=False)
-            s = pd.Series([epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
+                if (self.epi+1) % interval == 0:
+                    self.save(os.path.join(dir, 'models'), str(self.epi+1), save_data=False)
+            s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
             self.data = self.data.append(s, ignore_index=True)
             
             # log
-            if (epi+1) % self.epi_log_freq == 0:
+            if (self.epi+1) % self.env_log_freq == 0:
                 for key, value in epi_log.items():
-                    self.logger.scalar_summary(key, value, epi+1)
+                    self.logger.scalar_summary(key, value, self.epi+1)
+                self.logger.histo_summary('noise_ratio', np.array(noise_ratios), self.epi+1)
     
     def choose_action(self, state):
         self.actor.eval()
@@ -417,16 +436,16 @@ class MADDPG(object):
 
         
         # log
-        if (self.total_step+1) % self.step_log_freq == 0:
-            self.logger.scalar_summary('critic_loss', loss.data.cpu().numpy()[0], self.total_step)
+        if (self.epi+1) % self.model_log_freq == 0 and self.step==1:
+            self.logger.scalar_summary('critic_loss', loss.data.cpu().numpy()[0], self.epi+1)
             for key, value in self.critic.named_parameters():
                 key = key.replace('.', '/')
-                self.logger.histo_summary('critic/'+key, value.data.cpu().numpy(), self.total_step)
-                self.logger.histo_summary('critic/'+key+'/grad', value.grad.data.cpu().numpy(), self.total_step)
+                self.logger.histo_summary('critic/'+key, value.data.cpu().numpy(), self.epi+1)
+                self.logger.histo_summary('critic/'+key+'/grad', value.grad.data.cpu().numpy(), self.epi+1)
             for key, value in self.actor.named_parameters():
                 key = key.replace('.', '/')
-                self.logger.histo_summary('actor/'+key, value.data.cpu().numpy(), self.total_step)
-                self.logger.histo_summary('actor/'+key+'/grad', value.grad.data.cpu().numpy(), self.total_step)
+                self.logger.histo_summary('actor/'+key, value.data.cpu().numpy(), self.epi+1)
+                self.logger.histo_summary('actor/'+key+'/grad', value.grad.data.cpu().numpy(), self.epi+1)
 
         self.critic.train()
 
@@ -437,7 +456,7 @@ class MADDPG(object):
         title = {common.S_EPI:[], common.S_TOTAL_R:[]}
         df = pd.DataFrame(title)
 
-        for epi in trange(n, desc='test epi', leave=True):
+        for self.epi in trange(n, desc='test epi', leave=True):
             o = self.env.reset()
             acc_r = 0
             while True:
@@ -458,7 +477,7 @@ class MADDPG(object):
                 o = o_
                 if done:
                     break
-            s = pd.Series([epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
+            s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
             df = df.append(s, ignore_index=True)
         if dir is not None:
             df.to_csv('{}/test_data.csv'.format(dir))

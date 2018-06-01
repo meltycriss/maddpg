@@ -12,7 +12,7 @@ control_args = ['gpu', 'path', 'env', 'repeat', 'n_test', 'manual', 'save_interv
 model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilon_decay',
         'gamma', 'target_update_frequency', 'batch_size', 'random_process_mode', 'max_step', 
         'actor_update_mode', 'popart', 'actor', 'critic', 'epsilon_start', 'epsilon_end', 
-        'epsilon_rate', 'partition_num']
+        'epsilon_rate', 'partition_num', 'env_log_freq', 'model_log_freq']
 
 def get_args():
     parser = argparse.ArgumentParser(description='rl')
@@ -52,6 +52,8 @@ def get_args():
     parser.add_argument('--epsilon_end', type=float)
     parser.add_argument('--epsilon_rate', type=float)
     parser.add_argument('--partition_num', type=int)
+    parser.add_argument('--env_log_freq', type=int)
+    parser.add_argument('--model_log_freq', type=int)
 
     ##############################################
     # remember to change global model_args
