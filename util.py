@@ -51,3 +51,10 @@ def plot_custom(df, unit=None, condition=None, dir='.', name='sum.png', ylim=Non
     sns_plot = sns.tsplot(data=df, time=common.S_EPI, value=common.S_TOTAL_R, unit=unit, condition=condition, **kwargs)
     plt.savefig('{}/{}'.format(dir, name), dpi=200)
     plt.close()
+
+def soft_update(target, source, tau):
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data = target_param.data * (1.0 - tau) + param.data * tau
+
+def hard_update(target, source):
+    target.load_state_dict(source.state_dict())

@@ -21,6 +21,7 @@ import inspect
 import pickle
 import random
 from logger import Logger
+import util
 
 
 class MADDPG(object):
@@ -45,6 +46,11 @@ class MADDPG(object):
             partition_num=100,
             env_log_freq=100,
             model_log_freq=500,
+            target_update_mode='hard',
+            tau=1e-3,
+            grad_clip_mode=None,
+            grad_clip_norm=5.,
+            critic_weight_decay=0.,
             ):
         # configuration log
         frame = inspect.currentframe()
@@ -112,7 +118,7 @@ class MADDPG(object):
 
         # uniform er
         #self.exp = Experience(mem_size)
-        self.optim_critic = optim.Adam(self.critic.parameters(), lr=lr_critic)
+        self.optim_critic = optim.Adam(self.critic.parameters(), lr=lr_critic, weight_decay=critic_weight_decay)
         self.optim_actor = optim.Adam(self.actor.parameters(), lr=-lr_actor)
         self.random_processes = []
         for _ in xrange(self.N):
@@ -128,10 +134,15 @@ class MADDPG(object):
         self.GAMMA = gamma
         self.TARGET_UPDATE_FREQUENCY = target_update_frequency
         self.BATCH_SIZE = batch_size
+        self.target_update_mode = target_update_mode
+        self.tau = tau
 
         title = {common.S_EPI:[], common.S_TOTAL_R:[]}
         self.data = pd.DataFrame(title)
         self.RAND_PROC = random_process_mode
+
+        self.grad_clip_mode = grad_clip_mode
+        self.grad_clip_norm = grad_clip_norm
 
         # logger
         self.logger = None
@@ -276,11 +287,26 @@ class MADDPG(object):
         return (self.LOW[:n]+self.HIGH[:n])/2 + a*(self.HIGH[:n]-self.LOW[:n])/2
 
     def update_target(self):
-        self.target_actor.load_state_dict(self.actor.state_dict())
-        self.target_critic.load_state_dict(self.critic.state_dict())
-        # pop-art
-        self.target_y_mean = self.y_mean
-        self.target_y_square_mean = self.y_square_mean
+        if 'hard' in self.target_update_mode:
+            util.hard_update(self.target_actor, self.actor)
+            util.hard_update(self.target_critic, self.critic)
+            # pop-art
+            self.target_y_mean = self.y_mean
+            self.target_y_square_mean = self.y_square_mean
+        else:
+            util.soft_update(self.target_actor, self.actor, self.tau)
+            util.soft_update(self.target_critic, self.critic, self.tau)
+            # no sure how to update pop-art w.r.t. soft update
+            self.target_y_mean = self.target_y_mean * (1.0 - self.tau) + self.y_mean * self.tau
+            self.target_y_square_mean = self.target_y_square_mean * (1.0 - self.tau) + self.y_square_mean * self.tau
+
+    def clip_grad(self, network):
+        if self.grad_clip_mode is not None:
+            if 'norm' in self.grad_clip_mode:
+                torch.nn.utils.clip_grad_norm(network.parameters(), self.grad_clip_norm)
+            else:
+                for param in network.parameters():
+                    param.grad.data.clamp_(-self.grad_clip_norm, self.grad_clip_norm)
 
     def update_actor_critic(self):
         # sample minibatch
@@ -364,6 +390,8 @@ class MADDPG(object):
 
         self.optim_critic.zero_grad()
         loss.backward()
+        self.clip_grad(self.critic)
+
         self.optim_critic.step()
 
         
@@ -403,6 +431,7 @@ class MADDPG(object):
             obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
             self.optim_actor.zero_grad()
             obj.backward()
+            self.clip_grad(self.actor)
             self.optim_actor.step()    
         # one by one
         elif 'obo' in self.actor_update_mode:
@@ -420,6 +449,7 @@ class MADDPG(object):
                 obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
                 self.optim_actor.zero_grad()
                 obj.backward()
+                self.clip_grad(self.actor)
                 self.optim_actor.step()    
         # default
         else:
@@ -432,6 +462,7 @@ class MADDPG(object):
             obj = torch.mean(y_delta * self.critic(bat_o, bat_a_o) + self.y_mean) if self.POPART else torch.mean(self.critic(bat_o, bat_a_o))
             self.optim_actor.zero_grad()
             obj.backward()
+            self.clip_grad(self.actor)
             self.optim_actor.step()    
 
         
