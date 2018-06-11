@@ -60,6 +60,8 @@ def get_args():
     parser.add_argument('--grad_clip_mode', type=str, choices=['clamp', 'norm'])
     parser.add_argument('--grad_clip_norm', type=float)
     parser.add_argument('--critic_weight_decay', type=float)
+    parser.add_argument('--exp_trunc', type=float, nargs='+')
+    parser.add_argument('--exp_percent', type=float, nargs='+')
 
     ##############################################
     # remember to change global model_args

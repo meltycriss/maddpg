@@ -44,13 +44,15 @@ class MADDPG(object):
             epsilon_end=.01,
             epsilon_rate=1./200,
             partition_num=100,
-            env_log_freq=1,
+            env_log_freq=100,
             model_log_freq=500,
             target_update_mode='hard',
             tau=1e-3,
             grad_clip_mode=None,
             grad_clip_norm=5.,
             critic_weight_decay=0.,
+            exp_trunc=[],
+            exp_percent=[],
             ):
         # configuration log
         frame = inspect.currentframe()
@@ -107,14 +109,34 @@ class MADDPG(object):
         self.total_step = 0
         self.PARTITION_NUM = partition_num
         self.LEARN_START = mem_size/self.PARTITION_NUM+1
-        exp_conf = {
-                'size': mem_size,
-                'learn_start': self.LEARN_START,
-                'partition_num': self.PARTITION_NUM,
-                'total_step': self.MAX_EPI * 50,
-                'batch_size': batch_size,
-                }
-        self.exp = Experience(exp_conf)
+        self.exp_trunc = exp_trunc
+        self.exp_percent = exp_percent
+        self.exp_batch_sizes = []
+        #if len(self.exp_trunc)>0:
+        if len(self.exp_trunc) != len(self.exp_percent):
+            raise RuntimeError("different exp_trunc and exp_percent length")
+        self.exp = []
+        for i in range(len(self.exp_trunc)+1):
+            tmp_batch_size = int(batch_size*(1-sum(self.exp_percent))) if i==len(self.exp_trunc) else int(batch_size*self.exp_percent[i])
+            self.exp_batch_sizes.append(tmp_batch_size)
+            exp_conf = {
+                    'size': mem_size,
+                    'learn_start': self.LEARN_START,
+                    'partition_num': self.PARTITION_NUM,
+                    'total_step': self.MAX_EPI * 50,
+                    'batch_size': tmp_batch_size
+                    }
+            self.exp.append(Experience(exp_conf))
+        #else:
+        #    exp_conf = {
+        #            'size': mem_size,
+        #            'learn_start': self.LEARN_START,
+        #            'partition_num': self.PARTITION_NUM,
+        #            'total_step': self.MAX_EPI * 50,
+        #            'batch_size': batch_size,
+        #            }
+        #    self.exp = Experience(exp_conf)
+
 
         # uniform er
         #self.exp = Experience(mem_size)
@@ -160,7 +182,7 @@ class MADDPG(object):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/train_record'.format(dir), force=True)
             os.mkdir(os.path.join(dir, 'models'))
-            self.logger = Logger('{}/train_logs'.format(dir))
+            self.logger = Logger('{}/train_log'.format(dir))
         self.update_counter = 0
         self.total_step = 0
         epsilon = self.EPSILON_START
@@ -230,9 +252,25 @@ class MADDPG(object):
 
                 # per
                 if self.actor_update_mode=='dynamic':
-                    self.exp.store(common.Transition_agent(o, a, r, o_, done, info['agent']))
+                    #if len(self.exp_trunc)==0:
+                    #    self.exp.store(common.Transition_agent(o, a, r, o_, done, info['agent']))
+                    #else:
+                    if self.total_step <= self.LEARN_START:
+                        for exp in self.exp:
+                            exp.store(common.Transition_agent(o, a, r, o_, done, info['agent']))
+                    else:
+                        idx = np.digitize(r, self.exp_trunc) if len(self.exp_trunc)>0 else 0
+                        self.exp[idx].store(common.Transition_agent(o, a, r, o_, done, info['agent']))
                 else:
-                    self.exp.store(common.Transition(o, a, r, o_, done))
+                    #if len(self.exp_trunc)==0:
+                    #    self.exp.store(common.Transition(o, a, r, o_, done))
+                    #else:
+                    if self.total_step <= self.LEARN_START:
+                        for exp in self.exp:
+                            exp.store(common.Transition(o, a, r, o_, done))
+                    else:
+                        idx = np.digitize(r, self.exp_trunc) if len(self.exp_trunc)>0 else 0
+                        self.exp[idx].store(common.Transition(o, a, r, o_, done))
 
                 # uer
                 #self.exp.push(o, a, r, o_, done)
@@ -322,7 +360,19 @@ class MADDPG(object):
         # sample minibatch
 
         # per
-        minibatch, w, e_id = self.exp.sample(self.total_step)
+        #if len(self.exp_trunc)==0:
+        #    minibatch, w, e_id = self.exp.sample(self.total_step)
+        #else:
+        minibatch = []
+        ws = []
+        e_ids = []
+        for exp in self.exp:
+            tmp_minibatch, tmp_w, tmp_e_id = exp.sample(self.total_step)
+            minibatch += tmp_minibatch
+            ws.append(tmp_w)
+            e_ids.append(tmp_e_id)
+        w = np.hstack(ws)
+
         if self.actor_update_mode=='dynamic':
             minibatch = common.Transition_agent(*zip(*minibatch))
         else:
@@ -387,7 +437,13 @@ class MADDPG(object):
             w = w.cuda()
         loss = (eval_o - Gt)**2
         delta = loss.data.cpu().numpy().copy() if self.CUDA else loss.data.numpy().copy() 
-        self.exp.update_priority(e_id, delta)
+        #if len(self.exp_trunc)==0:
+        #    self.exp.update_priority(e_id, delta)
+        #else:
+        for i, e_id in enumerate(e_ids):
+            l = sum(self.exp_batch_sizes[:i])
+            r = sum(self.exp_batch_sizes[:i+1])
+            self.exp[i].update_priority(e_id, delta[l:r])
         loss = w*loss
         loss = torch.mean(loss)
 
@@ -502,7 +558,7 @@ class MADDPG(object):
     def test(self, dir=None, n=1):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/test_record'.format(dir), force=True, video_callable=lambda episode_id: True)
-            logger = Logger('{}/test_logs'.format(dir))
+            logger = Logger('{}/test_log'.format(dir))
 
         #title = {common.S_EPI:[], common.S_TOTAL_R:[]}
         #df = pd.DataFrame(title)
@@ -541,10 +597,11 @@ class MADDPG(object):
         torch.save(self.critic.state_dict(), '{}/critic{}.pt'.format(dir, suffix))
         #if save_data:
         #    self.data.to_csv('{}/train_data{}.csv'.format(dir, suffix))
-        with open('{}/config{}.txt'.format(dir, suffix), 'w') as f:
-            for item in self.config:
-                f.write(str(item)+'\n')
-            f.write('random seed: '+str(self.seed)+'\n')
+        if suffix=='':
+            with open('{}/config{}.txt'.format(dir, suffix), 'w') as f:
+                for item in self.config:
+                    f.write(str(item)+'\n')
+                f.write('random seed: '+str(self.seed)+'\n')
         if self.POPART:
             with open('{}/popart{}.pkl'.format(dir, suffix), 'w') as f:
                 pickle.dump([self.y_mean, self.y_square_mean], f)
