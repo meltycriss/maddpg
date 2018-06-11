@@ -3,6 +3,7 @@ import pandas as pd
 import common
 import os
 import matplotlib.pyplot as plt
+import torch
 
 def concat_times(dir, csv_name='train_data.csv'):
     # subfolders are 0, 1, 2, ...
@@ -58,3 +59,8 @@ def soft_update(target, source, tau):
 
 def hard_update(target, source):
     target.load_state_dict(source.state_dict())
+
+def isnan(tensor):
+    if not isinstance(tensor, torch.Tensor):
+        raise ValueError("The argument is not a tensor")
+    return tensor != tensor

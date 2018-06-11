@@ -44,7 +44,7 @@ class MADDPG(object):
             epsilon_end=.01,
             epsilon_rate=1./200,
             partition_num=100,
-            env_log_freq=100,
+            env_log_freq=1,
             model_log_freq=500,
             target_update_mode='hard',
             tau=1e-3,
@@ -137,8 +137,8 @@ class MADDPG(object):
         self.target_update_mode = target_update_mode
         self.tau = tau
 
-        title = {common.S_EPI:[], common.S_TOTAL_R:[]}
-        self.data = pd.DataFrame(title)
+        #title = {common.S_EPI:[], common.S_TOTAL_R:[]}
+        #self.data = pd.DataFrame(title)
         self.RAND_PROC = random_process_mode
 
         self.grad_clip_mode = grad_clip_mode
@@ -149,12 +149,18 @@ class MADDPG(object):
         self.env_log_freq = env_log_freq
         self.model_log_freq = model_log_freq
         self.step = 0
+
+        # random seed
+        self.seed = int(time.time())
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+
         
     def train(self, dir=None, interval=1000):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/train_record'.format(dir), force=True)
             os.mkdir(os.path.join(dir, 'models'))
-            self.logger = Logger('{}/logs'.format(dir))
+            self.logger = Logger('{}/train_logs'.format(dir))
         self.update_counter = 0
         self.total_step = 0
         epsilon = self.EPSILON_START
@@ -169,6 +175,7 @@ class MADDPG(object):
             # log
             epi_log = {}
             noise_ratios = []
+            rewards = []
             while True:
                 self.step += 1
                 self.total_step += 1
@@ -243,6 +250,7 @@ class MADDPG(object):
 
                 # epi_log
                 if (self.epi+1) % self.env_log_freq == 0:
+                    rewards.append(r)
                     if info.has_key('log_info'):
                         log_info = info['log_info']
                         if log_info['int_coll']:
@@ -264,14 +272,16 @@ class MADDPG(object):
             if dir is not None:
                 if (self.epi+1) % interval == 0:
                     self.save(os.path.join(dir, 'models'), str(self.epi+1), save_data=False)
-            s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
-            self.data = self.data.append(s, ignore_index=True)
+            #s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
+            #self.data = self.data.append(s, ignore_index=True)
             
             # log
             if (self.epi+1) % self.env_log_freq == 0:
                 for key, value in epi_log.items():
                     self.logger.scalar_summary(key, value, self.epi+1)
                 self.logger.histo_summary('noise_ratio', np.array(noise_ratios), self.epi+1)
+                self.logger.histo_summary('rewards', np.array(rewards), self.epi+1)
+                self.logger.scalar_summary('total_reward', acc_r, self.epi+1)
     
     def choose_action(self, state):
         self.actor.eval()
@@ -469,6 +479,15 @@ class MADDPG(object):
         # log
         if (self.epi+1) % self.model_log_freq == 0 and self.step==1:
             self.logger.scalar_summary('critic_loss', loss.data.cpu().numpy()[0], self.epi+1)
+            self.logger.histo_summary('bat_r', bat_r.data.cpu().numpy(), self.epi+1)
+            hasnan = False
+            for param in self.critic.parameters():
+                hasnan = hasnan or util.isnan(param.data.cpu()).any()
+            self.logger.scalar_summary('critic_hasnan', int(hasnan), self.epi+1)
+            hasnan = False
+            for param in self.actor.parameters():
+                hasnan = hasnan or util.isnan(param.data.cpu()).any()
+            self.logger.scalar_summary('actor_hasnan', int(hasnan), self.epi+1)
             for key, value in self.critic.named_parameters():
                 key = key.replace('.', '/')
                 self.logger.histo_summary('critic/'+key, value.data.cpu().numpy(), self.epi+1)
@@ -483,9 +502,10 @@ class MADDPG(object):
     def test(self, dir=None, n=1):
         if dir is not None:
             self.env = wrappers.Monitor(self.orig_env, '{}/test_record'.format(dir), force=True, video_callable=lambda episode_id: True)
+            logger = Logger('{}/test_logs'.format(dir))
 
-        title = {common.S_EPI:[], common.S_TOTAL_R:[]}
-        df = pd.DataFrame(title)
+        #title = {common.S_EPI:[], common.S_TOTAL_R:[]}
+        #df = pd.DataFrame(title)
 
         for self.epi in trange(n, desc='test epi', leave=True):
             o = self.env.reset()
@@ -508,21 +528,23 @@ class MADDPG(object):
                 o = o_
                 if done:
                     break
-            s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
-            df = df.append(s, ignore_index=True)
-        if dir is not None:
-            df.to_csv('{}/test_data.csv'.format(dir))
-        else:
-            print df
+            #s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
+            #df = df.append(s, ignore_index=True)
+            logger.scalar_summary('total_reward', acc_r, self.epi+1)
+        #if dir is not None:
+        #    df.to_csv('{}/test_data.csv'.format(dir))
+        #else:
+        #    print df
 
     def save(self, dir, suffix='', save_data=True):
         torch.save(self.actor.state_dict(), '{}/actor{}.pt'.format(dir, suffix))
         torch.save(self.critic.state_dict(), '{}/critic{}.pt'.format(dir, suffix))
-        if save_data:
-            self.data.to_csv('{}/train_data{}.csv'.format(dir, suffix))
+        #if save_data:
+        #    self.data.to_csv('{}/train_data{}.csv'.format(dir, suffix))
         with open('{}/config{}.txt'.format(dir, suffix), 'w') as f:
             for item in self.config:
                 f.write(str(item)+'\n')
+            f.write('random seed: '+str(self.seed)+'\n')
         if self.POPART:
             with open('{}/popart{}.pkl'.format(dir, suffix), 'w') as f:
                 pickle.dump([self.y_mean, self.y_square_mean], f)
@@ -537,8 +559,8 @@ class MADDPG(object):
             with open('{}/popart{}.pkl'.format(dir, suffix)) as f:
                 self.y_mean, self.y_square_mean = pickle.load(f)
 
-    def get_data(self):
-        return self.data
+    #def get_data(self):
+    #    return self.data
 
     
 
