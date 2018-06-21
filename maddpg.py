@@ -22,6 +22,7 @@ import pickle
 import random
 from logger import Logger
 import util
+import Queue
 
 
 class MADDPG(object):
@@ -187,6 +188,10 @@ class MADDPG(object):
         self.total_step = 0
         epsilon = self.EPSILON_START
         self.update_target()
+        # to log success rate of an interval
+        end_status_interval = 100
+        end_status_queue = Queue.Queue(end_status_interval)
+        end_status_counter = np.zeros(4)
         for self.epi in trange(self.MAX_EPI, desc='train epi', leave=True):
             for i in xrange(self.N):
                 self.random_processes[i].reset_states()
@@ -285,25 +290,36 @@ class MADDPG(object):
 
                 acc_r += r
                 o = o_
+                
+                if info.has_key('log_info'):
+                    log_info = info['log_info']
+                    if log_info['int_coll']:
+                        end_status = 0
+                    elif log_info['ext_coll']:
+                        end_status = 1
+                    elif log_info['success']:
+                        end_status = 2
+                    else:
+                        end_status = 3
+                    end_status_counter[end_status] += 1
+                    if end_status_queue.full():
+                        pop = end_status_queue.get()
+                        end_status_counter[pop] -= 1
+                    end_status_queue.put(end_status)
 
                 # epi_log
                 if (self.epi+1) % self.env_log_freq == 0:
                     rewards.append(r)
                     if info.has_key('log_info'):
                         log_info = info['log_info']
-                        if log_info['int_coll']:
-                            epi_log['end_status'] = 0
-                        elif log_info['ext_coll']:
-                            epi_log['end_status'] = 1
-                        elif log_info['success']:
-                            epi_log['end_status'] = 2
-                        else:
-                            epi_log['end_status'] = 3
+                        epi_log['end_status'] = end_status
                         epi_log['min_goal_dis'] = min(log_info['goal_dis'], epi_log['min_goal_dis']) if epi_log.has_key('min_goal_dis') else log_info['goal_dis']
-                        epi_log['avg_avg_agent_center_dis'] = epi_log['avg_avg_agent_center_dis'] + 1./self.step * (log_info['avg_agent_center_dis']-epi_log['avg_avg_agent_center_dis']) if epi_log.has_key('avg_avg_agent_center_dis') else log_info['avg_agent_center_dis']
-                        epi_log['min_avg_agent_center_dis'] = min(epi_log['min_avg_agent_center_dis'], log_info['avg_agent_center_dis']) if epi_log.has_key('min_avg_agent_center_dis') else log_info['avg_agent_center_dis']
-                        epi_log['avg_min_inter_agent_dis'] = epi_log['avg_min_inter_agent_dis'] + 1./self.step * (log_info['min_inter_agent_dis']-epi_log['avg_min_inter_agent_dis']) if epi_log.has_key('avg_min_inter_agent_dis') else log_info['min_inter_agent_dis']
-                        epi_log['min_min_inter_agent_dis'] = min(epi_log['min_min_inter_agent_dis'], log_info['min_inter_agent_dis']) if epi_log.has_key('min_min_inter_agent_dis') else log_info['min_inter_agent_dis']
+                        # didn't divided by end_status_interval to avoid not full queue
+                        epi_log['last_{}_success_rate'.format(end_status_interval)] = 1. * end_status_counter[2] / sum(end_status_counter)
+                        #epi_log['avg_avg_agent_center_dis'] = epi_log['avg_avg_agent_center_dis'] + 1./self.step * (log_info['avg_agent_center_dis']-epi_log['avg_avg_agent_center_dis']) if epi_log.has_key('avg_avg_agent_center_dis') else log_info['avg_agent_center_dis']
+                        #epi_log['min_avg_agent_center_dis'] = min(epi_log['min_avg_agent_center_dis'], log_info['avg_agent_center_dis']) if epi_log.has_key('min_avg_agent_center_dis') else log_info['avg_agent_center_dis']
+                        #epi_log['avg_min_inter_agent_dis'] = epi_log['avg_min_inter_agent_dis'] + 1./self.step * (log_info['min_inter_agent_dis']-epi_log['avg_min_inter_agent_dis']) if epi_log.has_key('avg_min_inter_agent_dis') else log_info['min_inter_agent_dis']
+                        #epi_log['min_min_inter_agent_dis'] = min(epi_log['min_min_inter_agent_dis'], log_info['min_inter_agent_dis']) if epi_log.has_key('min_min_inter_agent_dis') else log_info['min_inter_agent_dis']
 
                 if done:
                     break
@@ -401,7 +417,9 @@ class MADDPG(object):
             bat_a_o_[:,i*self.n_a:(i+1)*self.n_a] = tmp_bat_a_o_
         #bat_a_o_ = self.target_actor(bat_o_)
 
-        Gt = bat_r
+        # to log the correct bat_r
+        #Gt = bat_r
+        Gt = Variable(bat_r.data.clone())
 
         if self.POPART:
             # pop-art
@@ -536,22 +554,22 @@ class MADDPG(object):
         if (self.epi+1) % self.model_log_freq == 0 and self.step==1:
             self.logger.scalar_summary('critic_loss', loss.data.cpu().numpy()[0], self.epi+1)
             self.logger.histo_summary('bat_r', bat_r.data.cpu().numpy(), self.epi+1)
-            hasnan = False
-            for param in self.critic.parameters():
-                hasnan = hasnan or util.isnan(param.data.cpu()).any()
-            self.logger.scalar_summary('critic_hasnan', int(hasnan), self.epi+1)
-            hasnan = False
-            for param in self.actor.parameters():
-                hasnan = hasnan or util.isnan(param.data.cpu()).any()
-            self.logger.scalar_summary('actor_hasnan', int(hasnan), self.epi+1)
-            for key, value in self.critic.named_parameters():
-                key = key.replace('.', '/')
-                self.logger.histo_summary('critic/'+key, value.data.cpu().numpy(), self.epi+1)
-                self.logger.histo_summary('critic/'+key+'/grad', value.grad.data.cpu().numpy(), self.epi+1)
-            for key, value in self.actor.named_parameters():
-                key = key.replace('.', '/')
-                self.logger.histo_summary('actor/'+key, value.data.cpu().numpy(), self.epi+1)
-                self.logger.histo_summary('actor/'+key+'/grad', value.grad.data.cpu().numpy(), self.epi+1)
+            #hasnan = False
+            #for param in self.critic.parameters():
+            #    hasnan = hasnan or util.isnan(param.data.cpu()).any()
+            #self.logger.scalar_summary('critic_hasnan', int(hasnan), self.epi+1)
+            #hasnan = False
+            #for param in self.actor.parameters():
+            #    hasnan = hasnan or util.isnan(param.data.cpu()).any()
+            #self.logger.scalar_summary('actor_hasnan', int(hasnan), self.epi+1)
+            #for key, value in self.critic.named_parameters():
+            #    key = key.replace('.', '/')
+            #    self.logger.histo_summary('critic/'+key, value.data.cpu().numpy(), self.epi+1)
+            #    self.logger.histo_summary('critic/'+key+'/grad', value.grad.data.cpu().numpy(), self.epi+1)
+            #for key, value in self.actor.named_parameters():
+            #    key = key.replace('.', '/')
+            #    self.logger.histo_summary('actor/'+key, value.data.cpu().numpy(), self.epi+1)
+            #    self.logger.histo_summary('actor/'+key+'/grad', value.grad.data.cpu().numpy(), self.epi+1)
 
         self.critic.train()
 
