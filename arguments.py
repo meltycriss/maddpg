@@ -13,7 +13,8 @@ model_args = ['mem_size', 'lr_critic', 'lr_actor', 'epsilon', 'max_epi', 'epsilo
         'gamma', 'target_update_frequency', 'batch_size', 'random_process_mode', 'max_step', 
         'actor_update_mode', 'popart', 'actor', 'critic', 'epsilon_start', 'epsilon_end', 
         'epsilon_rate', 'partition_num', 'env_log_freq', 'model_log_freq',
-        'target_update_mode', 'tau', 'grad_clip_mode', 'grad_clip_norm', 'critic_weight_decay']
+        'target_update_mode', 'tau', 'grad_clip_mode', 'grad_clip_norm', 'critic_weight_decay',
+        'exp_rebalance_freq',]
 
 def get_args():
     parser = argparse.ArgumentParser(description='rl')
@@ -62,6 +63,7 @@ def get_args():
     parser.add_argument('--critic_weight_decay', type=float)
     parser.add_argument('--exp_trunc', type=float, nargs='+')
     parser.add_argument('--exp_percent', type=float, nargs='+')
+    parser.add_argument('--exp_rebalance_freq', type=int)
 
     ##############################################
     # remember to change global model_args

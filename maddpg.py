@@ -54,6 +54,7 @@ class MADDPG(object):
             critic_weight_decay=0.,
             exp_trunc=[],
             exp_percent=[],
+            exp_rebalance_freq=None,
             ):
         # configuration log
         frame = inspect.currentframe()
@@ -112,6 +113,7 @@ class MADDPG(object):
         self.LEARN_START = mem_size/self.PARTITION_NUM+1
         self.exp_trunc = exp_trunc
         self.exp_percent = exp_percent
+        self.exp_rebalance_freq = exp_rebalance_freq
         self.exp_batch_sizes = []
         #if len(self.exp_trunc)>0:
         if len(self.exp_trunc) != len(self.exp_percent):
@@ -276,6 +278,10 @@ class MADDPG(object):
                     else:
                         idx = np.digitize(r, self.exp_trunc) if len(self.exp_trunc)>0 else 0
                         self.exp[idx].store(common.Transition(o, a, r, o_, done))
+
+                if self.exp_rebalance_freq is not None and self.total_step % self.exp_rebalance_freq == 0:
+                    for exp in self.exp:
+                        exp.rebalance()
 
                 # uer
                 #self.exp.push(o, a, r, o_, done)
