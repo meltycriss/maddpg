@@ -23,6 +23,7 @@ import random
 from logger import Logger
 import util
 import Queue
+from pper import PrioritizedReplayBuffer
 
 
 class MADDPG(object):
@@ -55,6 +56,7 @@ class MADDPG(object):
             exp_trunc=[],
             exp_percent=[],
             exp_rebalance_freq=None,
+            exp_type='rank',
             ):
         # configuration log
         frame = inspect.currentframe()
@@ -115,6 +117,7 @@ class MADDPG(object):
         self.exp_percent = exp_percent
         self.exp_rebalance_freq = exp_rebalance_freq
         self.exp_batch_sizes = []
+        self.exp_type = exp_type
         #if len(self.exp_trunc)>0:
         if len(self.exp_trunc) != len(self.exp_percent):
             raise RuntimeError("different exp_trunc and exp_percent length")
@@ -129,7 +132,7 @@ class MADDPG(object):
                     'total_step': self.MAX_EPI * 50,
                     'batch_size': tmp_batch_size
                     }
-            self.exp.append(Experience(exp_conf))
+            self.exp.append(Experience(exp_conf)) if self.exp_type=='rank' else self.exp.append(PrioritizedReplayBuffer(mem_size, alpha=.7))
         #else:
         #    exp_conf = {
         #            'size': mem_size,
@@ -279,7 +282,7 @@ class MADDPG(object):
                         idx = np.digitize(r, self.exp_trunc) if len(self.exp_trunc)>0 else 0
                         self.exp[idx].store(common.Transition(o, a, r, o_, done))
 
-                if self.exp_rebalance_freq is not None and self.total_step % self.exp_rebalance_freq == 0:
+                if self.exp_type=='rank' and self.exp_rebalance_freq is not None and self.total_step % self.exp_rebalance_freq == 0:
                     for exp in self.exp:
                         exp.rebalance()
 
@@ -388,8 +391,9 @@ class MADDPG(object):
         minibatch = []
         ws = []
         e_ids = []
-        for exp in self.exp:
-            tmp_minibatch, tmp_w, tmp_e_id = exp.sample(self.total_step)
+        for i, exp in enumerate(self.exp):
+            tmp = exp.sample(self.total_step) if self.exp_type=='rank' else exp.sample(self.exp_batch_sizes[i], 1.)
+            tmp_minibatch, tmp_w, tmp_e_id = exp.sample(self.total_step) if self.exp_type=='rank' else exp.sample(self.exp_batch_sizes[i], beta=1.)
             minibatch += tmp_minibatch
             ws.append(tmp_w)
             e_ids.append(tmp_e_id)
