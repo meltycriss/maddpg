@@ -342,8 +342,8 @@ class MADDPG(object):
             if (self.epi+1) % self.env_log_freq == 0:
                 for key, value in epi_log.items():
                     self.logger.scalar_summary(key, value, self.epi+1)
-                self.logger.histo_summary('noise_ratio', np.array(noise_ratios), self.epi+1)
-                self.logger.histo_summary('rewards', np.array(rewards), self.epi+1)
+                #self.logger.histo_summary('noise_ratio', np.array(noise_ratios), self.epi+1)
+                #self.logger.histo_summary('rewards', np.array(rewards), self.epi+1)
                 self.logger.scalar_summary('total_reward', acc_r, self.epi+1)
     
     def choose_action(self, state):
@@ -418,6 +418,7 @@ class MADDPG(object):
             bat_o_ = bat_o_.cuda()
             bat_not_done_mask = bat_not_done_mask.cuda()
         bat_agent = minibatch.agent if self.actor_update_mode=='dynamic' else None
+
         
         # update critic
         bat_a_o_ = Variable(bat_a.data.clone())

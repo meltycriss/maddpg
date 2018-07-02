@@ -48,6 +48,9 @@ model_names = [
         [key, str(value)])
         for key, value in arg.items()])
         for arg in args]
+# handle invalid dir char
+for i in range(len(model_names)):
+    model_names[i] = model_names[i].replace('[', '').replace(']', '').replace(' ', '').replace(',', '_')
 # handle standard arg, i.e., {}
 model_names = ['standard' if name=='' else name  for name in model_names]
 
