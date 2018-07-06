@@ -322,7 +322,7 @@ class MADDPG(object):
                     if info.has_key('log_info'):
                         log_info = info['log_info']
                         epi_log['end_status'] = end_status
-                        epi_log['min_goal_dis'] = min(log_info['goal_dis'], epi_log['min_goal_dis']) if epi_log.has_key('min_goal_dis') else log_info['goal_dis']
+                        #epi_log['min_goal_dis'] = min(log_info['goal_dis'], epi_log['min_goal_dis']) if epi_log.has_key('min_goal_dis') else log_info['goal_dis']
                         # didn't divided by end_status_interval to avoid not full queue
                         epi_log['last_{}_success_rate'.format(end_status_interval)] = 1. * end_status_counter[2] / sum(end_status_counter)
                         #epi_log['avg_avg_agent_center_dis'] = epi_log['avg_avg_agent_center_dis'] + 1./self.step * (log_info['avg_agent_center_dis']-epi_log['avg_avg_agent_center_dis']) if epi_log.has_key('avg_avg_agent_center_dis') else log_info['avg_agent_center_dis']
@@ -344,6 +344,8 @@ class MADDPG(object):
                     self.logger.scalar_summary(key, value, self.epi+1)
                 #self.logger.histo_summary('noise_ratio', np.array(noise_ratios), self.epi+1)
                 #self.logger.histo_summary('rewards', np.array(rewards), self.epi+1)
+                avg_r = self.test(n=100)
+                self.logger.scalar_summary('test_avg_r', avg_r, self.epi+1)
                 self.logger.scalar_summary('total_reward', acc_r, self.epi+1)
     
     def choose_action(self, state):
@@ -564,7 +566,7 @@ class MADDPG(object):
         # log
         if (self.epi+1) % self.model_log_freq == 0 and self.step==1:
             self.logger.scalar_summary('critic_loss', loss.data.cpu().numpy()[0], self.epi+1)
-            self.logger.histo_summary('bat_r', bat_r.data.cpu().numpy(), self.epi+1)
+            #self.logger.histo_summary('bat_r', bat_r.data.cpu().numpy(), self.epi+1)
             #hasnan = False
             #for param in self.critic.parameters():
             #    hasnan = hasnan or util.isnan(param.data.cpu()).any()
@@ -586,14 +588,17 @@ class MADDPG(object):
 
     def test(self, dir=None, n=1):
         if dir is not None:
-            self.env = wrappers.Monitor(self.orig_env, '{}/test_record'.format(dir), force=True, video_callable=lambda episode_id: True)
+            env = wrappers.Monitor(self.orig_env, '{}/test_record'.format(dir), force=True, video_callable=lambda episode_id: True)
             logger = Logger('{}/test_log'.format(dir))
+        else:
+            env = self.orig_env
+
 
         #title = {common.S_EPI:[], common.S_TOTAL_R:[]}
         #df = pd.DataFrame(title)
-
-        for self.epi in trange(n, desc='test epi', leave=True):
-            o = self.env.reset()
+        avg_r = 0.
+        for epi in trange(n, desc='test epi', leave=True):
+            o = env.reset()
             acc_r = 0
             while True:
                 #if dir is not None:
@@ -606,16 +611,19 @@ class MADDPG(object):
                     a[i*self.n_a:(i+1)*self.n_a] = tmp_a
 
                 if self.ENV_NORMALIZED:
-                    o_, r, done, info = self.env.step(a)
+                    o_, r, done, info = env.step(a)
                 else:
-                    o_, r, done, info = self.env.step(self.map_to_action(a))
+                    o_, r, done, info = env.step(self.map_to_action(a))
                 acc_r += r
                 o = o_
                 if done:
                     break
+            avg_r = avg_r + 1.*(acc_r-avg_r)/(epi+1)
             #s = pd.Series([self.epi, acc_r], index=[common.S_EPI, common.S_TOTAL_R])
             #df = df.append(s, ignore_index=True)
-            logger.scalar_summary('total_reward', acc_r, self.epi+1)
+            if dir is not None:
+                logger.scalar_summary('total_reward', acc_r, epi+1)
+        return avg_r
         #if dir is not None:
         #    df.to_csv('{}/test_data.csv'.format(dir))
         #else:
